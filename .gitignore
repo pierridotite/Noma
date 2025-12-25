@@ -1,0 +1,23 @@
+# Rust
+/target
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NOMA specific
+*.noma.o
+*.noma.ir
+*.ptx
+/build
+/dist
