@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/build-passing-green.svg)]()
 [![Stage](https://img.shields.io/badge/Stage-Pre--Alpha-orange)]()
-[![Milestone 3](https://img.shields.io/badge/Milestone%203-In%20Progress-yellow)]()
+[![Milestone 3](https://img.shields.io/badge/Milestone%203-Complete-brightgreen)]()
 
 > **The "C" of the Brain.**
 > The first systems programming language with native, compile-time differentiation.
@@ -108,7 +108,7 @@ NOMA operates as a modern compiler pipeline based on LLVM and MLIR infrastructur
 
 We are currently in the **Bootstrap Phase**. The immediate goal is not full GPU support, but achieving the "Tipping Point": a minimal compiler capable of differentiating a scalar function on the CPU.
 
-**Current Milestone:** Milestone 3 - The Tipping Point (In Progress)
+**Current Milestone:** Milestone 3 - The Tipping Point (COMPLETED - THE MVP IS LIVE!)
 
 ### Milestone 1: The Skeleton - COMPLETED
 
@@ -130,15 +130,15 @@ We are currently in the **Bootstrap Phase**. The immediate goal is not full GPU 
 
 **Status:** Parser fully operational. AST construction working. Computational graph IR implemented with forward pass evaluation. All 12 unit tests passing.
 
-### Milestone 3: The Tipping Point - IN PROGRESS
+### Milestone 3: The Tipping Point - COMPLETED
 
 *Objective: Proof of Concept - CPU Autodiff.*
 
 * [x] **Backward Pass:** Implementing reverse-mode automatic differentiation for scalars.
 * [x] **Optimization Loop:** Generating code that updates variables based on gradients.
-* [ ] **Demo:** A script solving `y = x^2` (finding x=0 via gradient descent).
+* [x] **Demo:** A script solving `y = x^2` (finding x=0 via gradient descent).
 
-**Status:** Backward pass implemented with chain rule. Gradient descent optimizer working. 14 unit tests passing.
+**Status:** Complete! The tipping point reached. CPU autodiff working end-to-end with demonstrated convergence.
 
 ### Milestone 4: The Metal
 
