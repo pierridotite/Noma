@@ -332,9 +332,200 @@ impl ComputationalGraph {
         println!("=== Computational Graph ===");
         for (id, node) in &self.nodes {
             println!(
-                "Node {:?}: {:?}, value: {:?}, inputs: {:?}",
-                id, node.node_type, node.value, node.inputs
+                "Node {:?}: {:?}, value: {:?}, gradients: {:?}, inputs: {:?}",
+                id, node.node_type, node.value, node.gradient, node.inputs
             );
+        }
+    }
+
+    /// Backward pass - compute gradients via reverse-mode autodiff
+    pub fn backward_pass(&mut self, output_id: NodeId) -> Result<(), String> {
+        // Initialize gradient of output node to 1.0 (dL/dL = 1)
+        if let Some(node) = self.nodes.get_mut(&output_id) {
+            node.gradient = Some(1.0);
+        }
+
+        // Collect node IDs in reverse topological order (for backprop)
+        let node_ids: Vec<NodeId> = self.nodes.keys().copied().collect();
+
+        // Backpropagate through each node
+        for node_id in node_ids {
+            if let Some(gradient) = self.get_node(node_id).and_then(|n| n.gradient) {
+                if gradient == 0.0 {
+                    continue;
+                }
+
+                if let Some(node) = self.get_node(node_id) {
+                    let node_type = node.node_type.clone();
+                    let inputs = node.inputs.clone();
+
+                    match node_type {
+                        NodeType::Constant(_) => {
+                            // No gradient for constants
+                        }
+                        NodeType::Learnable(_, ) => {
+                            // Gradient already set, will be used by optimizer
+                        }
+                        NodeType::Variable(_, ) => {
+                            // Pass gradient to input
+                            if inputs.len() == 1 {
+                                if let Some(input_node) = self.nodes.get_mut(&inputs[0]) {
+                                    input_node.gradient = Some(input_node.gradient.unwrap_or(0.0) + gradient);
+                                }
+                            }
+                        }
+                        NodeType::BinaryOp(ref op) => {
+                            if inputs.len() == 2 {
+                                let left_val = self.nodes.get(&inputs[0]).and_then(|n| n.value);
+                                let right_val = self.nodes.get(&inputs[1]).and_then(|n| n.value);
+
+                                match op.as_str() {
+                                    "add" => {
+                                        // d(a+b)/da = 1, d(a+b)/db = 1
+                                        if let Some(left_node) = self.nodes.get_mut(&inputs[0]) {
+                                            left_node.gradient = Some(left_node.gradient.unwrap_or(0.0) + gradient);
+                                        }
+                                        if let Some(right_node) = self.nodes.get_mut(&inputs[1]) {
+                                            right_node.gradient = Some(right_node.gradient.unwrap_or(0.0) + gradient);
+                                        }
+                                    }
+                                    "sub" => {
+                                        // d(a-b)/da = 1, d(a-b)/db = -1
+                                        if let Some(left_node) = self.nodes.get_mut(&inputs[0]) {
+                                            left_node.gradient = Some(left_node.gradient.unwrap_or(0.0) + gradient);
+                                        }
+                                        if let Some(right_node) = self.nodes.get_mut(&inputs[1]) {
+                                            right_node.gradient = Some(right_node.gradient.unwrap_or(0.0) - gradient);
+                                        }
+                                    }
+                                    "mul" => {
+                                        // d(a*b)/da = b, d(a*b)/db = a
+                                        if let Some(left_node) = self.nodes.get_mut(&inputs[0]) {
+                                            if let Some(b) = right_val {
+                                                left_node.gradient = Some(left_node.gradient.unwrap_or(0.0) + gradient * b);
+                                            }
+                                        }
+                                        if let Some(right_node) = self.nodes.get_mut(&inputs[1]) {
+                                            if let Some(a) = left_val {
+                                                right_node.gradient = Some(right_node.gradient.unwrap_or(0.0) + gradient * a);
+                                            }
+                                        }
+                                    }
+                                    "div" => {
+                                        // d(a/b)/da = 1/b, d(a/b)/db = -a/b²
+                                        if let Some(left_node) = self.nodes.get_mut(&inputs[0]) {
+                                            if let Some(b) = right_val {
+                                                if b != 0.0 {
+                                                    left_node.gradient = Some(left_node.gradient.unwrap_or(0.0) + gradient / b);
+                                                }
+                                            }
+                                        }
+                                        if let Some(right_node) = self.nodes.get_mut(&inputs[1]) {
+                                            if let Some(a) = left_val {
+                                                if let Some(b) = right_val {
+                                                    if b != 0.0 {
+                                                        right_node.gradient = Some(right_node.gradient.unwrap_or(0.0) - gradient * a / (b * b));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "pow" => {
+                                        // d(a^b)/da = b*a^(b-1), d(a^b)/db = a^b*ln(a)
+                                        if let Some(left_node) = self.nodes.get_mut(&inputs[0]) {
+                                            if let Some(a) = left_val {
+                                                if let Some(b) = right_val {
+                                                    if a > 0.0 {
+                                                        let local_grad = gradient * b * a.powf(b - 1.0);
+                                                        left_node.gradient = Some(left_node.gradient.unwrap_or(0.0) + local_grad);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if let Some(right_node) = self.nodes.get_mut(&inputs[1]) {
+                                            if let Some(a) = left_val {
+                                                if a > 0.0 {
+                                                    let local_grad = gradient * a.powf(right_val.unwrap_or(0.0)) * a.ln();
+                                                    right_node.gradient = Some(right_node.gradient.unwrap_or(0.0) + local_grad);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        NodeType::UnaryOp(ref op) => {
+                            if inputs.len() == 1 {
+                                let val = self.nodes.get(&inputs[0]).and_then(|n| n.value);
+
+                                match op.as_str() {
+                                    "neg" => {
+                                        // d(-a)/da = -1
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) {
+                                            node.gradient = Some(node.gradient.unwrap_or(0.0) - gradient);
+                                        }
+                                    }
+                                    "sigmoid" => {
+                                        // d(sigmoid(x))/dx = sigmoid(x)(1-sigmoid(x))
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) {
+                                            if let Some(v) = val {
+                                                let s = 1.0 / (1.0 + (-v).exp());
+                                                let local_grad = gradient * s * (1.0 - s);
+                                                node.gradient = Some(node.gradient.unwrap_or(0.0) + local_grad);
+                                            }
+                                        }
+                                    }
+                                    "relu" => {
+                                        // d(relu(x))/dx = 1 if x > 0 else 0
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) {
+                                            if let Some(v) = val {
+                                                let local_grad = if v > 0.0 { gradient } else { 0.0 };
+                                                node.gradient = Some(node.gradient.unwrap_or(0.0) + local_grad);
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        NodeType::FunctionCall(_) => {
+                            // TODO: Implement gradients for other functions
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Optimize learnable variables using SGD
+    pub fn optimize_step(&mut self, learning_rate: f64) -> Result<(), String> {
+        let node_ids: Vec<NodeId> = self.nodes.keys().copied().collect();
+
+        for node_id in node_ids {
+            if let Some(node) = self.nodes.get(&node_id) {
+                if let NodeType::Learnable(_) = &node.node_type {
+                    if let (Some(value), Some(gradient)) = (node.value, node.gradient) {
+                        // SGD: x = x - learning_rate * gradient
+                        if let Some(node) = self.nodes.get_mut(&node_id) {
+                            node.value = Some(value - learning_rate * gradient);
+                            // Reset gradient for next iteration
+                            node.gradient = Some(0.0);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Reset all gradients to zero
+    pub fn reset_gradients(&mut self) {
+        for node in self.nodes.values_mut() {
+            node.gradient = Some(0.0);
         }
     }
 }
@@ -383,5 +574,48 @@ mod tests {
 
         assert_eq!(graph.get_node(a).and_then(|n| n.value), Some(3.0));
         assert_eq!(graph.get_node(b).and_then(|n| n.value), Some(2.0));
+    }
+
+    #[test]
+    fn test_backward_pass_simple() {
+        let mut graph = ComputationalGraph::new();
+        
+        // Create: y = x^2
+        let x = graph.add_learnable("x".to_string(), 3.0);
+        let y = graph.add_binary_op("mul", x, x); // x * x = x^2
+        
+        // Forward pass
+        graph.forward_pass().unwrap();
+        assert_eq!(graph.get_node(y).and_then(|n| n.value), Some(9.0)); // 3^2 = 9
+        
+        // Backward pass
+        graph.backward_pass(y).unwrap();
+        
+        // dy/dx should be 2*x = 6
+        let x_gradient = graph.get_node(x).and_then(|n| n.gradient);
+        assert!(x_gradient.is_some());
+        assert!((x_gradient.unwrap() - 6.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_gradient_descent() {
+        let mut graph = ComputationalGraph::new();
+        
+        // Start with x = 5.0, want to minimize y = x^2
+        let x = graph.add_learnable("x".to_string(), 5.0);
+        let y = graph.add_binary_op("mul", x, x);
+        
+        // Do a few gradient descent steps
+        for _ in 0..10 {
+            graph.forward_pass().unwrap();
+            graph.backward_pass(y).unwrap();
+            graph.optimize_step(0.1).unwrap(); // learning rate = 0.1
+            graph.reset_gradients();
+        }
+        
+        // x should be closer to 0
+        let final_x = graph.get_node(x).and_then(|n| n.value);
+        assert!(final_x.is_some());
+        assert!(final_x.unwrap().abs() < 5.0); // Should have reduced from 5.0
     }
 }
