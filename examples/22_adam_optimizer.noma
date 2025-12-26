@@ -1,0 +1,25 @@
+// Example 22: Adam Optimizer
+// Demonstrates Adam (Adaptive Moment Estimation) optimizer for faster convergence
+
+fn main() {
+    // Select Adam optimizer (optimizer = 2.0)
+    let optimizer = 2.0;       // 1=SGD, 2=Adam, 3=RMSprop
+    
+    // Adam hyperparameters
+    let learning_rate = 0.1;   // Can use higher LR with Adam
+    let beta1 = 0.9;           // Momentum decay (default 0.9)
+    let beta2 = 0.999;         // Squared gradient decay (default 0.999)
+    let epsilon = 0.00000001;  // Numerical stability (1e-8)
+    let max_iterations = 1000;
+    
+    // Simple optimization: find x that minimizes (x - 5)^2
+    learn x = 0.0;
+    
+    optimize(x) until loss < 0.0001 {
+        let loss = (x - 5.0) * (x - 5.0);
+        minimize loss;
+    }
+    
+    print(x);  // Should converge to ~5.0
+    return x;
+}

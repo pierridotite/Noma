@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use noma_compiler::{Lexer, Parser as NomaParser, ComputationalGraph, LLVMCodegen, PTXCodegen, FunctionRegistry};
+use noma_compiler::{Lexer, Parser as NomaParser, ComputationalGraph, LLVMCodegen, PTXCodegen, FunctionRegistry, OptimizerType, OptimizerConfig, OptimizerState};
 use std::fs;
 use std::path::PathBuf;
 use std::collections::HashMap;
@@ -121,8 +121,8 @@ fn lower_statements_shared(
                 let objective = loop_last.or(*last_node).ok_or_else(|| "Optimize loop body produced no expressions".to_string())?;
                 let cond_id = graph.build_from_expression_with_functions(condition, variables, func_registry)?;
 
-                let (lr, iters) = pick_hyperparams(graph, variables, 0.1, 1000);
-                run_optimize_loop(graph, variables, cond_id, objective, target, lr, iters)?;
+                let (config, iters) = pick_hyperparams(graph, variables, 0.1, 1000);
+                run_optimize_loop(graph, variables, cond_id, objective, target, config, iters)?;
                 *last_node = Some(objective);
             }
             noma_compiler::Statement::Alloc { name, shape } => {
@@ -367,12 +367,15 @@ fn run_optimize_loop(
     cond_id: noma_compiler::NodeId,
     objective_id: noma_compiler::NodeId,
     target: &str,
-    learning_rate: f64,
+    config: OptimizerConfig,
     max_iter: usize,
 ) -> Result<(), String> {
     if !variables.contains_key(target) {
         return Err(format!("Optimize target '{}' not defined", target));
     }
+
+    // Initialize optimizer state for Adam/RMSprop
+    let mut optimizer_state = OptimizerState::new();
 
     for _ in 0..max_iter {
         graph.forward_pass()?;
@@ -382,7 +385,7 @@ fn run_optimize_loop(
         }
 
         graph.backward_pass(objective_id)?;
-        graph.optimize_step(learning_rate)?;
+        graph.optimize_step_with_config(&mut optimizer_state, &config)?;
         graph.reset_gradients();
     }
 
@@ -391,17 +394,21 @@ fn run_optimize_loop(
     Ok(())
 }
 
-/// Pick hyperparameters (learning rate and max iterations) from NOMA variables if present.
+/// Pick hyperparameters and optimizer configuration from NOMA variables if present.
 /// Recognized names:
+///  - optimizer: "optimizer" (values: "sgd", "adam", "rmsprop")
 ///  - learning rate: "learning_rate", "lr"
 ///  - max iterations: "max_iterations", "max_iter", "iterations"
+///  - Adam/RMSprop beta1: "beta1" (default 0.9)
+///  - Adam/RMSprop beta2: "beta2" (default 0.999 for Adam, 0.9 for RMSprop)
+///  - epsilon: "epsilon", "eps" (default 1e-8)
 /// If not found or invalid, fall back to provided defaults.
 fn pick_hyperparams(
     graph: &mut ComputationalGraph,
     variables: &HashMap<String, noma_compiler::NodeId>,
     default_lr: f64,
     default_iters: usize,
-) -> (f64, usize) {
+) -> (OptimizerConfig, usize) {
     // Try a forward pass so constants/expressions have values; ignore errors.
     let _ = graph.forward_pass();
 
@@ -413,11 +420,47 @@ fn pick_hyperparams(
             .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
     };
 
+    // Determine optimizer type
+    // We use a convention: optimizer = 1.0 for SGD, 2.0 for Adam, 3.0 for RMSprop
+    // Or check variable names: use_adam, use_rmsprop as flags
+    let optimizer_type = if let Some(opt_val) = read_scalar("optimizer") {
+        match opt_val as i32 {
+            2 => OptimizerType::Adam,
+            3 => OptimizerType::RMSprop,
+            _ => OptimizerType::SGD,
+        }
+    } else if read_scalar("use_adam").map(|v| v != 0.0).unwrap_or(false) {
+        OptimizerType::Adam
+    } else if read_scalar("use_rmsprop").map(|v| v != 0.0).unwrap_or(false) {
+        OptimizerType::RMSprop
+    } else {
+        OptimizerType::SGD
+    };
+
     // learning rate
     let lr = read_scalar("learning_rate")
         .or_else(|| read_scalar("lr"))
         .filter(|v| v.is_finite() && *v > 0.0)
         .unwrap_or(default_lr);
+
+    // Adam/RMSprop hyperparameters
+    let beta1 = read_scalar("beta1")
+        .filter(|v| v.is_finite() && *v >= 0.0 && *v < 1.0)
+        .unwrap_or(0.9);
+
+    let default_beta2 = match optimizer_type {
+        OptimizerType::Adam => 0.999,
+        OptimizerType::RMSprop => 0.9,
+        OptimizerType::SGD => 0.999,
+    };
+    let beta2 = read_scalar("beta2")
+        .filter(|v| v.is_finite() && *v >= 0.0 && *v < 1.0)
+        .unwrap_or(default_beta2);
+
+    let epsilon = read_scalar("epsilon")
+        .or_else(|| read_scalar("eps"))
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or(1e-8);
 
     // iterations
     let iters_f = read_scalar("max_iterations")
@@ -431,7 +474,15 @@ fn pick_hyperparams(
     // Cap very large values to avoid runaway compile-time loops
     let iters = (iters as usize).min(10_000_000);
 
-    (lr, iters)
+    let config = OptimizerConfig {
+        optimizer_type,
+        learning_rate: lr,
+        beta1,
+        beta2,
+        epsilon,
+    };
+
+    (config, iters)
 }
 
 fn build_file(file: PathBuf, print_ast: bool, print_tokens: bool, print_graph: bool) -> anyhow::Result<()> {

@@ -106,6 +106,43 @@ optimize(w) until loss < 0.001 {
 }
 ```
 
+### Optimizers
+
+NOMA supports three optimizers: **SGD**, **Adam**, and **RMSprop**.
+
+```noma
+// Select optimizer: 1=SGD, 2=Adam, 3=RMSprop
+let optimizer = 2.0;         // Use Adam
+
+// Common hyperparameters
+let learning_rate = 0.001;
+let max_iterations = 10000;
+
+// Adam/RMSprop specific
+let beta1 = 0.9;             // Momentum decay (Adam only)
+let beta2 = 0.999;           // Squared gradient decay (0.999 for Adam, 0.9 for RMSprop)
+let epsilon = 0.00000001;    // Numerical stability (1e-8)
+
+learn w = 0.0;
+optimize(w) until loss < 0.0001 {
+    let loss = (w - 5.0) * (w - 5.0);
+    minimize loss;
+}
+```
+
+**Alternative selection syntax:**
+```noma
+let use_adam = 1.0;      // Non-zero enables Adam
+// or
+let use_rmsprop = 1.0;   // Non-zero enables RMSprop
+```
+
+| Optimizer | Best For | Key Parameters |
+|-----------|----------|----------------|
+| **SGD** | Simple problems, fine-tuning | `learning_rate` |
+| **Adam** | Most deep learning tasks | `learning_rate`, `beta1`, `beta2`, `epsilon` |
+| **RMSprop** | RNNs, non-stationary objectives | `learning_rate`, `beta2`, `epsilon` |
+
 ### User-Defined Functions
 
 Define and call your own functions for code reuse and modularity:
@@ -173,6 +210,31 @@ ceil(x)       // ceil
 sum(tensor)   // Sum all elements → scalar
 mean(tensor)  // Average of all elements → scalar
 print(x)      // Print value (passes through for chaining)
+```
+
+### Random Number Generation (RNG)
+
+```noma
+// Basic RNG
+rand()                    // Random float in [0, 1)
+rand_uniform(min, max)    // Random float in [min, max)
+rand_normal(mean, std)    // Random from normal distribution N(mean, std)
+
+// Tensor RNG
+rand_tensor(d1, d2, ...)              // Tensor with uniform random [0, 1)
+rand_normal_tensor(mean, std, d1, d2, ...)  // Tensor with N(mean, std)
+
+// Neural Network Weight Initialization
+xavier_init(fan_in, fan_out, d1, d2, ...)   // Xavier/Glorot init for tanh/sigmoid
+he_init(fan_in, d1, d2, ...)                // He/Kaiming init for ReLU
+```
+
+**Example: Initialize a neural network layer**
+
+```noma
+// Layer: 64 inputs → 32 outputs with ReLU activation
+let W = he_init(64.0, 64.0, 32.0);    // He initialization
+let b = rand_tensor(32.0);            // Random bias (or use zeros)
 ```
 
 ### Tensors
@@ -283,6 +345,20 @@ Dynamic allocation enables:
 | `18_dynamic_network.noma` | Dynamic workspace | Network with allocated buffers |
 | `19_dynamic_growth.noma` | Grow capacity during training | realloc for dynamic growth |
 | `20_growing_network.noma` | Multi-phase network growth | alloc → realloc → free lifecycle |
+
+### Random Number Generation
+
+| Example | Description | Concept |
+|---------|-------------|---------|
+| `21_rng_init.noma` | RNG for weight initialization | rand, xavier_init, he_init |
+
+### Optimizers
+
+| Example | Description | Concept |
+|---------|-------------|---------|
+| `22_adam_optimizer.noma` | Adam optimizer | Adaptive moment estimation |
+| `23_rmsprop_optimizer.noma` | RMSprop optimizer | Root mean square propagation |
+| `24_optimizer_comparison.noma` | Compare optimizers | SGD vs Adam vs RMSprop |
 
 ### Linear Regression Example
 
@@ -472,7 +548,7 @@ Syntax highlighting is available for `.noma` files. See the [`noma-vscode`](./no
 - ✅ Reverse-mode automatic differentiation
 - ✅ LLVM IR code generation
 - ✅ Standalone binary compilation
-- ✅ Optimization loops (SGD)
+- ✅ Optimization loops (SGD, Adam, RMSprop)
 - ✅ Tensor literals and operations
 - ✅ Broadcasting (numpy-like N-D)
 - ✅ Reductions (sum, mean)
@@ -486,15 +562,15 @@ Syntax highlighting is available for `.noma` files. See the [`noma-vscode`](./no
 - ✅ Control flow (if/else, while; executed at compile-time lowering)
 - ✅ User-defined functions (inlined at compile-time, full autodiff support)
 - ✅ Dynamic allocation (`alloc`/`free`/`realloc` keywords for heap-based tensor management with dynamic resizing)
+- ✅ Random Number Generation (rand, rand_uniform, rand_normal, rand_tensor, xavier_init, he_init)
 
 
 ### Known limitations (current gaps)
 
-- Only SGD optimizer (no Adam/RMSprop)
 - No batching, dataset IO, or model serialization
 - C interop: double-only, no autodiff, interpreter (`run`) cannot execute externs
 - GPU PTX backend: experimental, elementwise `f64` only, demo host stub
-- Stdlib: limited to a few math functions `f64`; no RNG/BLAS/FFT
+- Stdlib: limited to a few math functions `f64`; no BLAS/FFT
 - Control flow is evaluated at lowering: non-taken branches are not compiled; `while` expands the graph (unrolling)
 - No autodiff through `floor`/`ceil` or external calls
 - **Single data type**: only `f64`; no integers, strings, or booleans as first-class types
@@ -507,8 +583,6 @@ Syntax highlighting is available for `.noma` files. See the [`noma-vscode`](./no
 
 ### Planned
 
-- 🔲 **Standard Library**: Random Number Generation (RNG) for weight initialization
-- 🔲 Adam/RMSprop optimizers
 - 🔲 Batch processing & File I/O (CSV/Safetensors)
 - 🔲 Model serialization
 

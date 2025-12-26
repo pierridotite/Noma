@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use crate::ast::{BinaryOperator, Expression, Statement, UnaryOperator};
+use rand::Rng;
+use rand_distr::{Normal, Distribution};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId(usize);
@@ -164,6 +166,101 @@ pub enum NodeType {
     HeapTensor(String),
     /// Reference to a freed tensor (for tracking)
     FreedTensor(String),
+}
+
+/// Optimizer type for training
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OptimizerType {
+    SGD,
+    Adam,
+    RMSprop,
+}
+
+impl Default for OptimizerType {
+    fn default() -> Self {
+        OptimizerType::SGD
+    }
+}
+
+/// Optimizer configuration with hyperparameters
+#[derive(Debug, Clone)]
+pub struct OptimizerConfig {
+    pub optimizer_type: OptimizerType,
+    pub learning_rate: f64,
+    pub beta1: f64,        // Adam: momentum decay (default 0.9)
+    pub beta2: f64,        // Adam/RMSprop: squared gradient decay (default 0.999 for Adam, 0.9 for RMSprop)
+    pub epsilon: f64,      // Small constant to prevent division by zero (default 1e-8)
+}
+
+impl Default for OptimizerConfig {
+    fn default() -> Self {
+        OptimizerConfig {
+            optimizer_type: OptimizerType::SGD,
+            learning_rate: 0.01,
+            beta1: 0.9,
+            beta2: 0.999,
+            epsilon: 1e-8,
+        }
+    }
+}
+
+impl OptimizerConfig {
+    pub fn sgd(learning_rate: f64) -> Self {
+        OptimizerConfig {
+            optimizer_type: OptimizerType::SGD,
+            learning_rate,
+            ..Default::default()
+        }
+    }
+
+    pub fn adam(learning_rate: f64, beta1: f64, beta2: f64, epsilon: f64) -> Self {
+        OptimizerConfig {
+            optimizer_type: OptimizerType::Adam,
+            learning_rate,
+            beta1,
+            beta2,
+            epsilon,
+        }
+    }
+
+    pub fn rmsprop(learning_rate: f64, beta2: f64, epsilon: f64) -> Self {
+        OptimizerConfig {
+            optimizer_type: OptimizerType::RMSprop,
+            learning_rate,
+            beta1: 0.0, // Not used for RMSprop
+            beta2,
+            epsilon,
+        }
+    }
+}
+
+/// State for adaptive optimizers (Adam, RMSprop)
+/// Stores first moment (m) and second moment (v) for each learnable parameter
+#[derive(Debug, Clone, Default)]
+pub struct OptimizerState {
+    /// First moment estimates (momentum) - for Adam
+    pub m: HashMap<NodeId, Value>,
+    /// Second moment estimates (squared gradients) - for Adam and RMSprop
+    pub v: HashMap<NodeId, Value>,
+    /// Current timestep for bias correction in Adam
+    pub t: usize,
+}
+
+impl OptimizerState {
+    pub fn new() -> Self {
+        OptimizerState {
+            m: HashMap::new(),
+            v: HashMap::new(),
+            t: 0,
+        }
+    }
+
+    /// Reset optimizer state (useful when starting fresh optimization)
+    pub fn reset(&mut self) {
+        self.m.clear();
+        self.v.clear();
+        self.t = 0;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -953,6 +1050,117 @@ impl ComputationalGraph {
                             let res = v.map_unary(|x| x.ceil())?;
                             if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
                         }
+                        // RNG functions for weight initialization
+                        "rand" => {
+                            // rand() - returns random f64 in [0, 1)
+                            if inputs.len() != 0 { return Err("rand expects 0 arguments".to_string()); }
+                            let mut rng = rand::thread_rng();
+                            let val = rng.gen::<f64>();
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(Value::Scalar(val)); }
+                        }
+                        "rand_uniform" => {
+                            // rand_uniform(min, max) - returns random f64 in [min, max)
+                            if inputs.len() != 2 { return Err("rand_uniform expects 2 arguments (min, max)".to_string()); }
+                            let min_val = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing min")?;
+                            let max_val = self.nodes.get(&inputs[1]).and_then(|n| n.value.clone()).ok_or("Missing max")?;
+                            let min = min_val.as_scalar().ok_or("rand_uniform min must be scalar")?;
+                            let max = max_val.as_scalar().ok_or("rand_uniform max must be scalar")?;
+                            let mut rng = rand::thread_rng();
+                            let val = rng.gen_range(min..max);
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(Value::Scalar(val)); }
+                        }
+                        "rand_normal" => {
+                            // rand_normal(mean, std) - returns random f64 from N(mean, std)
+                            if inputs.len() != 2 { return Err("rand_normal expects 2 arguments (mean, std)".to_string()); }
+                            let mean_val = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing mean")?;
+                            let std_val = self.nodes.get(&inputs[1]).and_then(|n| n.value.clone()).ok_or("Missing std")?;
+                            let mean = mean_val.as_scalar().ok_or("rand_normal mean must be scalar")?;
+                            let std = std_val.as_scalar().ok_or("rand_normal std must be scalar")?;
+                            let normal = Normal::new(mean, std).map_err(|e| format!("Invalid normal distribution: {}", e))?;
+                            let mut rng = rand::thread_rng();
+                            let val = normal.sample(&mut rng);
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(Value::Scalar(val)); }
+                        }
+                        "rand_tensor" => {
+                            // rand_tensor(dim1, dim2, ...) - returns tensor of shape [dim1, dim2, ...] with random values in [0, 1)
+                            if inputs.is_empty() { return Err("rand_tensor expects at least 1 dimension argument".to_string()); }
+                            let mut shape = Vec::new();
+                            for &inp in &inputs {
+                                let dim_val = self.nodes.get(&inp).and_then(|n| n.value.clone()).ok_or("Missing dimension")?;
+                                let dim = dim_val.as_scalar().ok_or("rand_tensor dimensions must be scalars")?;
+                                if dim < 1.0 || dim.fract() != 0.0 { return Err("rand_tensor dimensions must be positive integers".to_string()); }
+                                shape.push(dim as usize);
+                            }
+                            let size: usize = shape.iter().product();
+                            let mut rng = rand::thread_rng();
+                            let data: Vec<f64> = (0..size).map(|_| rng.gen::<f64>()).collect();
+                            let tensor = Tensor { data, shape };
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(Value::Tensor(tensor)); }
+                        }
+                        "rand_normal_tensor" => {
+                            // rand_normal_tensor(mean, std, dim1, dim2, ...) - returns tensor with normal distribution
+                            if inputs.len() < 3 { return Err("rand_normal_tensor expects at least 3 arguments (mean, std, dim1, ...)".to_string()); }
+                            let mean_val = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing mean")?;
+                            let std_val = self.nodes.get(&inputs[1]).and_then(|n| n.value.clone()).ok_or("Missing std")?;
+                            let mean = mean_val.as_scalar().ok_or("mean must be scalar")?;
+                            let std = std_val.as_scalar().ok_or("std must be scalar")?;
+                            let normal = Normal::new(mean, std).map_err(|e| format!("Invalid normal distribution: {}", e))?;
+                            let mut shape = Vec::new();
+                            for &inp in &inputs[2..] {
+                                let dim_val = self.nodes.get(&inp).and_then(|n| n.value.clone()).ok_or("Missing dimension")?;
+                                let dim = dim_val.as_scalar().ok_or("dimensions must be scalars")?;
+                                if dim < 1.0 || dim.fract() != 0.0 { return Err("dimensions must be positive integers".to_string()); }
+                                shape.push(dim as usize);
+                            }
+                            let size: usize = shape.iter().product();
+                            let mut rng = rand::thread_rng();
+                            let data: Vec<f64> = (0..size).map(|_| normal.sample(&mut rng)).collect();
+                            let tensor = Tensor { data, shape };
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(Value::Tensor(tensor)); }
+                        }
+                        "xavier_init" => {
+                            // xavier_init(fan_in, fan_out, dim1, dim2, ...) - Xavier/Glorot initialization
+                            // Samples from U(-sqrt(6/(fan_in+fan_out)), sqrt(6/(fan_in+fan_out)))
+                            if inputs.len() < 3 { return Err("xavier_init expects at least 3 arguments (fan_in, fan_out, dim1, ...)".to_string()); }
+                            let fan_in_val = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing fan_in")?;
+                            let fan_out_val = self.nodes.get(&inputs[1]).and_then(|n| n.value.clone()).ok_or("Missing fan_out")?;
+                            let fan_in = fan_in_val.as_scalar().ok_or("fan_in must be scalar")?;
+                            let fan_out = fan_out_val.as_scalar().ok_or("fan_out must be scalar")?;
+                            let limit = (6.0 / (fan_in + fan_out)).sqrt();
+                            let mut shape = Vec::new();
+                            for &inp in &inputs[2..] {
+                                let dim_val = self.nodes.get(&inp).and_then(|n| n.value.clone()).ok_or("Missing dimension")?;
+                                let dim = dim_val.as_scalar().ok_or("dimensions must be scalars")?;
+                                if dim < 1.0 || dim.fract() != 0.0 { return Err("dimensions must be positive integers".to_string()); }
+                                shape.push(dim as usize);
+                            }
+                            let size: usize = shape.iter().product();
+                            let mut rng = rand::thread_rng();
+                            let data: Vec<f64> = (0..size).map(|_| rng.gen_range(-limit..limit)).collect();
+                            let tensor = Tensor { data, shape };
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(Value::Tensor(tensor)); }
+                        }
+                        "he_init" => {
+                            // he_init(fan_in, dim1, dim2, ...) - He/Kaiming initialization
+                            // Samples from N(0, sqrt(2/fan_in))
+                            if inputs.len() < 2 { return Err("he_init expects at least 2 arguments (fan_in, dim1, ...)".to_string()); }
+                            let fan_in_val = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing fan_in")?;
+                            let fan_in = fan_in_val.as_scalar().ok_or("fan_in must be scalar")?;
+                            let std = (2.0 / fan_in).sqrt();
+                            let normal = Normal::new(0.0, std).map_err(|e| format!("Invalid normal distribution: {}", e))?;
+                            let mut shape = Vec::new();
+                            for &inp in &inputs[1..] {
+                                let dim_val = self.nodes.get(&inp).and_then(|n| n.value.clone()).ok_or("Missing dimension")?;
+                                let dim = dim_val.as_scalar().ok_or("dimensions must be scalars")?;
+                                if dim < 1.0 || dim.fract() != 0.0 { return Err("dimensions must be positive integers".to_string()); }
+                                shape.push(dim as usize);
+                            }
+                            let size: usize = shape.iter().product();
+                            let mut rng = rand::thread_rng();
+                            let data: Vec<f64> = (0..size).map(|_| normal.sample(&mut rng)).collect();
+                            let tensor = Tensor { data, shape };
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(Value::Tensor(tensor)); }
+                        }
                         "index" => {
                             if inputs.len() < 2 { return Err("index expects at least target and one index".to_string()); }
                             let target_val = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing target")?;
@@ -1515,6 +1723,197 @@ impl ComputationalGraph {
         }
 
         Ok(())
+    }
+
+    /// Perform one Adam optimization step
+    /// Adam: Adaptive Moment Estimation
+    /// m_t = β1 * m_{t-1} + (1 - β1) * g_t  (first moment / momentum)
+    /// v_t = β2 * v_{t-1} + (1 - β2) * g_t²  (second moment / squared gradient)
+    /// m̂_t = m_t / (1 - β1^t)  (bias-corrected first moment)
+    /// v̂_t = v_t / (1 - β2^t)  (bias-corrected second moment)
+    /// θ_t = θ_{t-1} - lr * m̂_t / (√v̂_t + ε)
+    pub fn optimize_step_adam(
+        &mut self,
+        state: &mut OptimizerState,
+        config: &OptimizerConfig,
+    ) -> Result<(), String> {
+        state.t += 1;
+        let t = state.t as f64;
+        let lr = config.learning_rate;
+        let beta1 = config.beta1;
+        let beta2 = config.beta2;
+        let epsilon = config.epsilon;
+
+        // Bias correction factors
+        let bias_correction1 = 1.0 - beta1.powi(state.t as i32);
+        let bias_correction2 = 1.0 - beta2.powi(state.t as i32);
+
+        let node_ids: Vec<NodeId> = self.nodes.keys().copied().collect();
+
+        for node_id in node_ids {
+            if let Some(node) = self.nodes.get(&node_id) {
+                if let NodeType::Learnable(_) = &node.node_type {
+                    if let (Some(value), Some(gradient)) = (node.value.clone(), node.gradient.clone()) {
+                        // Get or initialize m and v for this parameter
+                        let m = state.m.entry(node_id).or_insert_with(|| gradient.zeros_like()).clone();
+                        let v = state.v.entry(node_id).or_insert_with(|| gradient.zeros_like()).clone();
+
+                        let (updated, new_m, new_v) = match (value, gradient, m, v) {
+                            (Value::Scalar(param), Value::Scalar(g), Value::Scalar(m_val), Value::Scalar(v_val)) => {
+                                // Update biased first moment estimate
+                                let m_new = beta1 * m_val + (1.0 - beta1) * g;
+                                // Update biased second raw moment estimate
+                                let v_new = beta2 * v_val + (1.0 - beta2) * g * g;
+                                // Compute bias-corrected estimates
+                                let m_hat = m_new / bias_correction1;
+                                let v_hat = v_new / bias_correction2;
+                                // Update parameter
+                                let param_new = param - lr * m_hat / (v_hat.sqrt() + epsilon);
+                                (Value::Scalar(param_new), Value::Scalar(m_new), Value::Scalar(v_new))
+                            }
+                            (Value::Tensor(param), Value::Tensor(g), Value::Tensor(m_t), Value::Tensor(v_t)) => {
+                                if param.shape != g.shape {
+                                    return Err("Gradient/value tensor shape mismatch".to_string());
+                                }
+                                let mut new_param = Vec::with_capacity(param.data.len());
+                                let mut new_m = Vec::with_capacity(param.data.len());
+                                let mut new_v = Vec::with_capacity(param.data.len());
+
+                                for i in 0..param.data.len() {
+                                    let p = param.data[i];
+                                    let grad = g.data[i];
+                                    let m_val = m_t.data[i];
+                                    let v_val = v_t.data[i];
+
+                                    // Update biased first moment estimate
+                                    let m_i = beta1 * m_val + (1.0 - beta1) * grad;
+                                    // Update biased second raw moment estimate
+                                    let v_i = beta2 * v_val + (1.0 - beta2) * grad * grad;
+                                    // Compute bias-corrected estimates
+                                    let m_hat = m_i / bias_correction1;
+                                    let v_hat = v_i / bias_correction2;
+                                    // Update parameter
+                                    let p_new = p - lr * m_hat / (v_hat.sqrt() + epsilon);
+
+                                    new_param.push(p_new);
+                                    new_m.push(m_i);
+                                    new_v.push(v_i);
+                                }
+
+                                (
+                                    Value::Tensor(Tensor { data: new_param, shape: param.shape.clone() }),
+                                    Value::Tensor(Tensor { data: new_m, shape: param.shape.clone() }),
+                                    Value::Tensor(Tensor { data: new_v, shape: param.shape }),
+                                )
+                            }
+                            _ => return Err("Mixed scalar/tensor optimization not supported".to_string()),
+                        };
+
+                        // Store updated moment estimates
+                        state.m.insert(node_id, new_m);
+                        state.v.insert(node_id, new_v);
+
+                        // Update parameter value
+                        if let Some(node) = self.nodes.get_mut(&node_id) {
+                            let zero = updated.zeros_like();
+                            node.value = Some(updated);
+                            node.gradient = Some(zero);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Perform one RMSprop optimization step
+    /// RMSprop: Root Mean Square Propagation
+    /// v_t = β * v_{t-1} + (1 - β) * g_t²  (squared gradient moving average)
+    /// θ_t = θ_{t-1} - lr * g_t / (√v_t + ε)
+    pub fn optimize_step_rmsprop(
+        &mut self,
+        state: &mut OptimizerState,
+        config: &OptimizerConfig,
+    ) -> Result<(), String> {
+        let lr = config.learning_rate;
+        let beta = config.beta2; // RMSprop uses beta2 as decay rate
+        let epsilon = config.epsilon;
+
+        let node_ids: Vec<NodeId> = self.nodes.keys().copied().collect();
+
+        for node_id in node_ids {
+            if let Some(node) = self.nodes.get(&node_id) {
+                if let NodeType::Learnable(_) = &node.node_type {
+                    if let (Some(value), Some(gradient)) = (node.value.clone(), node.gradient.clone()) {
+                        // Get or initialize v for this parameter
+                        let v = state.v.entry(node_id).or_insert_with(|| gradient.zeros_like()).clone();
+
+                        let (updated, new_v) = match (value, gradient, v) {
+                            (Value::Scalar(param), Value::Scalar(g), Value::Scalar(v_val)) => {
+                                // Update squared gradient moving average
+                                let v_new = beta * v_val + (1.0 - beta) * g * g;
+                                // Update parameter
+                                let param_new = param - lr * g / (v_new.sqrt() + epsilon);
+                                (Value::Scalar(param_new), Value::Scalar(v_new))
+                            }
+                            (Value::Tensor(param), Value::Tensor(g), Value::Tensor(v_t)) => {
+                                if param.shape != g.shape {
+                                    return Err("Gradient/value tensor shape mismatch".to_string());
+                                }
+                                let mut new_param = Vec::with_capacity(param.data.len());
+                                let mut new_v_data = Vec::with_capacity(param.data.len());
+
+                                for i in 0..param.data.len() {
+                                    let p = param.data[i];
+                                    let grad = g.data[i];
+                                    let v_val = v_t.data[i];
+
+                                    // Update squared gradient moving average
+                                    let v_i = beta * v_val + (1.0 - beta) * grad * grad;
+                                    // Update parameter
+                                    let p_new = p - lr * grad / (v_i.sqrt() + epsilon);
+
+                                    new_param.push(p_new);
+                                    new_v_data.push(v_i);
+                                }
+
+                                (
+                                    Value::Tensor(Tensor { data: new_param, shape: param.shape.clone() }),
+                                    Value::Tensor(Tensor { data: new_v_data, shape: param.shape }),
+                                )
+                            }
+                            _ => return Err("Mixed scalar/tensor optimization not supported".to_string()),
+                        };
+
+                        // Store updated squared gradient estimate
+                        state.v.insert(node_id, new_v);
+
+                        // Update parameter value
+                        if let Some(node) = self.nodes.get_mut(&node_id) {
+                            let zero = updated.zeros_like();
+                            node.value = Some(updated);
+                            node.gradient = Some(zero);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Unified optimize step that dispatches to the appropriate optimizer
+    pub fn optimize_step_with_config(
+        &mut self,
+        state: &mut OptimizerState,
+        config: &OptimizerConfig,
+    ) -> Result<(), String> {
+        match config.optimizer_type {
+            OptimizerType::SGD => self.optimize_step(config.learning_rate),
+            OptimizerType::Adam => self.optimize_step_adam(state, config),
+            OptimizerType::RMSprop => self.optimize_step_rmsprop(state, config),
+        }
     }
 
     pub fn reset_gradients(&mut self) {

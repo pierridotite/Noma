@@ -1,0 +1,60 @@
+// Example 21: Random Number Generation for Weight Initialization
+// Demonstrates the RNG functions in NOMA for neural network initialization
+
+fn main() {
+    // Basic random number generation
+    let r1 = rand();           // Random float in [0, 1)
+    print(r1);
+    
+    let r2 = rand();           // Another random value
+    print(r2);
+    
+    // Uniform distribution in a range
+    let uniform = rand_uniform(-1.0, 1.0);  // Random in [-1, 1)
+    print(uniform);
+    
+    // Normal (Gaussian) distribution
+    let normal = rand_normal(0.0, 1.0);     // Standard normal N(0, 1)
+    print(normal);
+    
+    // Random tensors - useful for weight initialization
+    let random_vec = rand_tensor(5.0);              // 1D tensor with 5 random values
+    print(random_vec);
+    
+    let random_mat = rand_tensor(3.0, 4.0);         // 3x4 matrix with random values
+    print(random_mat);
+    
+    // Normal distribution tensor
+    let normal_weights = rand_normal_tensor(0.0, 0.1, 2.0, 3.0);  // 2x3 with N(0, 0.1)
+    print(normal_weights);
+    
+    // Xavier/Glorot initialization (good for tanh/sigmoid activations)
+    // xavier_init(fan_in, fan_out, dimensions...)
+    // Samples from U(-sqrt(6/(fan_in+fan_out)), sqrt(6/(fan_in+fan_out)))
+    let W1 = xavier_init(10.0, 5.0, 10.0, 5.0);     // 10x5 weight matrix for layer: 10 inputs, 5 outputs
+    print(W1);
+    
+    // He/Kaiming initialization (good for ReLU activations)
+    // he_init(fan_in, dimensions...)
+    // Samples from N(0, sqrt(2/fan_in))
+    let W2 = he_init(5.0, 5.0, 3.0);               // 5x3 weight matrix for layer with 5 inputs
+    print(W2);
+    
+    // Practical example: Initialize a small neural network
+    // Layer 1: 4 inputs -> 8 hidden units
+    let layer1_weights = xavier_init(4.0, 8.0, 4.0, 8.0);
+    
+    // Layer 2: 8 hidden -> 2 outputs  
+    let layer2_weights = xavier_init(8.0, 2.0, 8.0, 2.0);
+    
+    print(layer1_weights);
+    print(layer2_weights);
+    
+    // Sum to show the tensors are properly created
+    let s1 = sum(layer1_weights);
+    let s2 = sum(layer2_weights);
+    print(s1);
+    print(s2);
+    
+    return 0.0;
+}

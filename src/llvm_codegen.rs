@@ -262,6 +262,68 @@ impl LLVMCodegen {
                             let arg_var = var_map.get(&node.inputs[0]).ok_or("Argument not found")?;
                             ir.push_str(&format!("  {} = call double @llvm.ceil.f64(double {})\n", var, arg_var));
                         }
+                        // RNG functions - use external C runtime
+                        "rand" => {
+                            // rand() -> drand48() which returns [0, 1)
+                            if node.inputs.len() != 0 { return Err("rand expects 0 arguments".to_string()); }
+                            self.extern_decls.insert(("drand48".to_string(), 0));
+                            ir.push_str(&format!("  {} = call double @drand48()\n", var));
+                        }
+                        "rand_uniform" => {
+                            // rand_uniform(min, max) -> min + drand48() * (max - min)
+                            if node.inputs.len() != 2 { return Err("rand_uniform expects 2 arguments".to_string()); }
+                            let min_var = var_map.get(&node.inputs[0]).ok_or("min arg not found")?;
+                            let max_var = var_map.get(&node.inputs[1]).ok_or("max arg not found")?;
+                            self.extern_decls.insert(("drand48".to_string(), 0));
+                            let rand_var = self.fresh_var();
+                            ir.push_str(&format!("  {} = call double @drand48()\n", rand_var));
+                            let diff_var = self.fresh_var();
+                            ir.push_str(&format!("  {} = fsub double {}, {}\n", diff_var, max_var, min_var));
+                            let scaled_var = self.fresh_var();
+                            ir.push_str(&format!("  {} = fmul double {}, {}\n", scaled_var, rand_var, diff_var));
+                            let result_var = self.fresh_var();
+                            ir.push_str(&format!("  {} = fadd double {}, {}\n", result_var, min_var, scaled_var));
+                            var_map.insert(node_id, result_var.clone());
+                            last_var = Some(result_var);
+                        }
+                        "rand_normal" => {
+                            // Box-Muller transform: sqrt(-2*ln(u1)) * cos(2*pi*u2)
+                            if node.inputs.len() != 2 { return Err("rand_normal expects 2 arguments".to_string()); }
+                            let mean_var = var_map.get(&node.inputs[0]).ok_or("mean arg not found")?;
+                            let std_var = var_map.get(&node.inputs[1]).ok_or("std arg not found")?;
+                            self.extern_decls.insert(("drand48".to_string(), 0));
+                            // Generate two uniform random numbers
+                            let u1 = self.fresh_var();
+                            ir.push_str(&format!("  {} = call double @drand48()\n", u1));
+                            let u2 = self.fresh_var();
+                            ir.push_str(&format!("  {} = call double @drand48()\n", u2));
+                            // z = sqrt(-2 * ln(u1)) * cos(2 * pi * u2)
+                            let ln_u1 = self.fresh_var();
+                            ir.push_str(&format!("  {} = call double @llvm.log.f64(double {})\n", ln_u1, u1));
+                            let neg2 = self.fresh_var();
+                            ir.push_str(&format!("  {} = fmul double -2.0e+00, {}\n", neg2, ln_u1));
+                            let sqrt_part = self.fresh_var();
+                            ir.push_str(&format!("  {} = call double @llvm.sqrt.f64(double {})\n", sqrt_part, neg2));
+                            let two_pi_u2 = self.fresh_var();
+                            ir.push_str(&format!("  {} = fmul double 6.2831853071795864e+00, {}\n", two_pi_u2, u2));
+                            let cos_part = self.fresh_var();
+                            ir.push_str(&format!("  {} = call double @llvm.cos.f64(double {})\n", cos_part, two_pi_u2));
+                            let z = self.fresh_var();
+                            ir.push_str(&format!("  {} = fmul double {}, {}\n", z, sqrt_part, cos_part));
+                            // result = mean + std * z
+                            let scaled = self.fresh_var();
+                            ir.push_str(&format!("  {} = fmul double {}, {}\n", scaled, std_var, z));
+                            let result_var = self.fresh_var();
+                            ir.push_str(&format!("  {} = fadd double {}, {}\n", result_var, mean_var, scaled));
+                            var_map.insert(node_id, result_var.clone());
+                            last_var = Some(result_var);
+                        }
+                        "rand_tensor" | "rand_normal_tensor" | "xavier_init" | "he_init" => {
+                            // These tensor-based RNG functions are evaluated at graph lowering time
+                            // and embedded as constants in the IR. Full runtime support would
+                            // require tensor memory allocation.
+                            return Err(format!("{} is evaluated at lowering time; use interpreter mode for tensor RNG", func_name));
+                        }
                         _ => {
                             // Treat unknown function calls as external C functions with double args/return.
                             let mut arg_vars = Vec::new();

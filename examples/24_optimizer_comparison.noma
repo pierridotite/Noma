@@ -1,0 +1,44 @@
+// Example 24: Comparing Optimizers
+// Shows SGD, Adam, and RMSprop on the same problem
+
+// This file demonstrates how to switch between optimizers
+// by changing the `optimizer` variable value:
+//   optimizer = 1.0  -> SGD (Stochastic Gradient Descent)
+//   optimizer = 2.0  -> Adam (Adaptive Moment Estimation)
+//   optimizer = 3.0  -> RMSprop (Root Mean Square Propagation)
+
+fn main() {
+    // ===== OPTIMIZER SELECTION =====
+    // Change this value to switch optimizers:
+    let optimizer = 2.0;  // Try 1.0 (SGD), 2.0 (Adam), or 3.0 (RMSprop)
+    
+    // ===== HYPERPARAMETERS =====
+    let learning_rate = 0.01;
+    let max_iterations = 5000;
+    
+    // Adam-specific (ignored for SGD/RMSprop)
+    let beta1 = 0.9;           // First moment decay
+    
+    // Adam and RMSprop (ignored for SGD)
+    let beta2 = 0.999;         // Second moment decay
+    let epsilon = 0.00000001;  // Numerical stability
+    
+    // ===== PROBLEM: Quadratic with two variables =====
+    // Minimize: f(w1, w2) = (w1 - 3)^2 + (w2 + 2)^2
+    // Solution: w1 = 3, w2 = -2
+    
+    learn w1 = 10.0;   // Start far from optimum
+    learn w2 = 10.0;
+    
+    optimize(w1) until loss < 0.0001 {
+        let e1 = w1 - 3.0;
+        let e2 = w2 + 2.0;
+        let loss = e1 * e1 + e2 * e2;
+        minimize loss;
+    }
+    
+    print(w1);  // Should be ~3.0
+    print(w2);  // Should be ~-2.0
+    
+    return w1;
+}
