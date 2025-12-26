@@ -9,6 +9,83 @@ pub struct Parser {
     current: usize,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_optimize_loop() {
+        let tokens = vec![
+            Token::new(TokenType::Fn, 1, 1),
+            Token::new(TokenType::Identifier("main".into()), 1, 4),
+            Token::new(TokenType::LParen, 1, 8),
+            Token::new(TokenType::RParen, 1, 9),
+            Token::new(TokenType::LBrace, 1, 11),
+            Token::new(TokenType::Optimize, 2, 1),
+            Token::new(TokenType::Identifier("x".into()), 2, 11),
+            Token::new(TokenType::Until, 2, 13),
+            Token::new(TokenType::Identifier("done".into()), 2, 19),
+            Token::new(TokenType::LBrace, 2, 24),
+            Token::new(TokenType::Identifier("x".into()), 3, 5),
+            Token::new(TokenType::Assign, 3, 7),
+            Token::new(TokenType::Number(1.0), 3, 9),
+            Token::new(TokenType::Semicolon, 3, 10),
+            Token::new(TokenType::RBrace, 4, 1),
+            Token::new(TokenType::RBrace, 5, 1),
+            Token::new(TokenType::Eof, 5, 2),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().expect("should parse optimize loop");
+        assert_eq!(program.items.len(), 1);
+        let func = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+        assert!(matches!(func.body[0], Statement::OptimizeLoop { .. }));
+    }
+
+    #[test]
+    fn parse_power_precedence() {
+        // x ^ 2 * 3 should parse as (x ^ 2) * 3
+        let tokens = vec![
+            Token::new(TokenType::Fn, 1, 1),
+            Token::new(TokenType::Identifier("main".into()), 1, 4),
+            Token::new(TokenType::LParen, 1, 8),
+            Token::new(TokenType::RParen, 1, 9),
+            Token::new(TokenType::LBrace, 1, 11),
+            Token::new(TokenType::Return, 2, 3),
+            Token::new(TokenType::Identifier("x".into()), 2, 10),
+            Token::new(TokenType::Power, 2, 12),
+            Token::new(TokenType::Number(2.0), 2, 13),
+            Token::new(TokenType::Star, 2, 15),
+            Token::new(TokenType::Number(3.0), 2, 17),
+            Token::new(TokenType::Semicolon, 2, 18),
+            Token::new(TokenType::RBrace, 3, 1),
+            Token::new(TokenType::Eof, 3, 2),
+        ];
+
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().expect("should parse power");
+        let func = match &program.items[0] {
+            Item::Function(f) => f,
+            _ => panic!("expected function"),
+        };
+
+        if let Statement::Return(Some(Expression::BinaryOp { left, op, right })) = &func.body[0] {
+            assert_eq!(*op, BinaryOperator::Mul);
+            if let Expression::BinaryOp { op: pow_op, .. } = &**left {
+                assert_eq!(*pow_op, BinaryOperator::Pow);
+            } else {
+                panic!("expected power on left side");
+            }
+            assert_eq!(**right, Expression::Number(3.0));
+        } else {
+            panic!("unexpected return expression shape");
+        }
+    }
+}
+
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Parser { tokens, current: 0 }
@@ -105,14 +182,25 @@ impl Parser {
     /// Parse a single statement
     fn parse_statement(&mut self) -> Result<Statement, NomaError> {
         match self.peek().token_type {
+            TokenType::LBrace => {
+                self.advance();
+                let block = self.parse_block()?;
+                Ok(Statement::Block(block))
+            }
             TokenType::Learn => self.parse_learn_declaration(),
             TokenType::Let => self.parse_let_declaration(),
+            TokenType::Optimize => self.parse_optimize_loop(),
             TokenType::Minimize => self.parse_minimize(),
             TokenType::Return => self.parse_return(),
             _ => {
-                let expr = self.parse_expression()?;
-                self.consume(TokenType::Semicolon, "Expected ';'")?;
-                Ok(Statement::Expression(expr))
+                // Handle assignment: identifier '=' expr;
+                if matches!(self.peek().token_type, TokenType::Identifier(_)) && matches!(self.peek_next().map(|t| &t.token_type), Some(TokenType::Assign)) {
+                    self.parse_assignment()
+                } else {
+                    let expr = self.parse_expression()?;
+                    self.consume(TokenType::Semicolon, "Expected ';'")?;
+                    Ok(Statement::Expression(expr))
+                }
             }
         }
     }
@@ -137,6 +225,27 @@ impl Parser {
         self.consume(TokenType::Semicolon, "Expected ';'")?;
 
         Ok(Statement::LetDeclaration { name, value })
+    }
+
+    /// Parse assignment statement
+    fn parse_assignment(&mut self) -> Result<Statement, NomaError> {
+        let name = self.parse_identifier("Expected variable name")?;
+        self.consume(TokenType::Assign, "Expected '='")?;
+        let value = self.parse_expression()?;
+        self.consume(TokenType::Semicolon, "Expected ';'")?;
+
+        Ok(Statement::Assignment { name, value })
+    }
+
+    /// Parse optimize loop: optimize <target> until <condition> { body }
+    fn parse_optimize_loop(&mut self) -> Result<Statement, NomaError> {
+        self.consume(TokenType::Optimize, "Expected 'optimize'")?;
+        let target = self.parse_identifier("Expected target to optimize")?;
+        self.consume(TokenType::Until, "Expected 'until'")?;
+        let condition = self.parse_expression()?;
+        self.consume(TokenType::LBrace, "Expected '{'")?;
+        let body = self.parse_block()?;
+        Ok(Statement::OptimizeLoop { target, condition, body })
     }
 
     /// Parse 'minimize' statement
@@ -167,14 +276,30 @@ impl Parser {
     }
 
     fn parse_or(&mut self) -> Result<Expression, NomaError> {
-        let expr = self.parse_and()?;
-        // OR operators not yet implemented in BinaryOperator
+        let mut expr = self.parse_and()?;
+        while matches!(self.peek().token_type, TokenType::Or) {
+            self.advance();
+            let right = self.parse_and()?;
+            expr = Expression::BinaryOp {
+                left: Box::new(expr),
+                op: BinaryOperator::Or,
+                right: Box::new(right),
+            };
+        }
         Ok(expr)
     }
 
     fn parse_and(&mut self) -> Result<Expression, NomaError> {
-        let expr = self.parse_equality()?;
-        // AND operators not yet implemented in BinaryOperator
+        let mut expr = self.parse_equality()?;
+        while matches!(self.peek().token_type, TokenType::And) {
+            self.advance();
+            let right = self.parse_equality()?;
+            expr = Expression::BinaryOp {
+                left: Box::new(expr),
+                op: BinaryOperator::And,
+                right: Box::new(right),
+            };
+        }
         Ok(expr)
     }
 
@@ -224,9 +349,24 @@ impl Parser {
     }
 
     fn parse_factor(&mut self) -> Result<Expression, NomaError> {
-        let mut expr = self.parse_unary()?;
+        let mut expr = self.parse_power()?;
 
         while let Some(op) = self.match_factor() {
+            let right = self.parse_power()?;
+            expr = Expression::BinaryOp {
+                left: Box::new(expr),
+                op,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_power(&mut self) -> Result<Expression, NomaError> {
+        let mut expr = self.parse_unary()?;
+
+        while let Some(op) = self.match_power() {
             let right = self.parse_unary()?;
             expr = Expression::BinaryOp {
                 left: Box::new(expr),
@@ -377,7 +517,17 @@ impl Parser {
             }
             TokenType::Percent => {
                 self.advance();
-                Some(BinaryOperator::Div)
+                Some(BinaryOperator::Mod)
+            }
+            _ => None,
+        }
+    }
+
+    fn match_power(&mut self) -> Option<BinaryOperator> {
+        match self.peek().token_type {
+            TokenType::Power => {
+                self.advance();
+                Some(BinaryOperator::Pow)
             }
             _ => None,
         }
@@ -396,6 +546,10 @@ impl Parser {
                 column: self.peek().column,
             }),
         }
+    }
+
+    fn peek_next(&self) -> Option<&Token> {
+        self.tokens.get(self.current + 1)
     }
 
     fn consume(&mut self, token_type: TokenType, message: &str) -> Result<(), NomaError> {

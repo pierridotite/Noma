@@ -31,6 +31,7 @@ pub enum BinaryOperator {
     Sub,       // -
     Mul,       // *
     Div,       // /
+    Mod,       // %
     Pow,       // ^ or **
     Equal,     // ==
     NotEqual,  // !=
@@ -38,6 +39,8 @@ pub enum BinaryOperator {
     Greater,   // >
     LessEq,    // <=
     GreaterEq, // >=
+    And,       // &&
+    Or,        // ||
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,6 +154,7 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::Sub => write!(f, "-"),
             BinaryOperator::Mul => write!(f, "*"),
             BinaryOperator::Div => write!(f, "/"),
+            BinaryOperator::Mod => write!(f, "%"),
             BinaryOperator::Pow => write!(f, "^"),
             BinaryOperator::Equal => write!(f, "=="),
             BinaryOperator::NotEqual => write!(f, "!="),
@@ -158,6 +162,8 @@ impl fmt::Display for BinaryOperator {
             BinaryOperator::Greater => write!(f, ">"),
             BinaryOperator::LessEq => write!(f, "<="),
             BinaryOperator::GreaterEq => write!(f, ">="),
+            BinaryOperator::And => write!(f, "&&"),
+            BinaryOperator::Or => write!(f, "||"),
         }
     }
 }

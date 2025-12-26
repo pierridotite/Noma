@@ -9,6 +9,11 @@ impl NodeId {
     pub fn new(id: usize) -> Self {
         NodeId(id)
     }
+
+    /// Expose the numeric index for ordering
+    pub fn index(&self) -> usize {
+        self.0
+    }
 }
 
 /// Represents a node in the computational graph
@@ -176,6 +181,7 @@ impl ComputationalGraph {
                     BinaryOperator::Sub => "sub",
                     BinaryOperator::Mul => "mul",
                     BinaryOperator::Div => "div",
+                    BinaryOperator::Mod => "mod",
                     BinaryOperator::Pow => "pow",
                     BinaryOperator::Equal => "eq",
                     BinaryOperator::NotEqual => "ne",
@@ -183,6 +189,8 @@ impl ComputationalGraph {
                     BinaryOperator::Greater => "gt",
                     BinaryOperator::LessEq => "le",
                     BinaryOperator::GreaterEq => "ge",
+                    BinaryOperator::And => "and",
+                    BinaryOperator::Or => "or",
                 };
                 
                 Ok(self.add_binary_op(op_str, left_id, right_id))
@@ -225,11 +233,56 @@ impl ComputationalGraph {
         &self.learnables
     }
 
+    /// Produce a deterministic topological order (by NodeId) of all nodes.
+    fn topological_order(&self) -> Result<Vec<NodeId>, String> {
+        // Kahn's algorithm with stable ordering by numeric id.
+        let mut indegree: HashMap<NodeId, usize> = HashMap::new();
+        let mut adj: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+
+        for (&id, node) in &self.nodes {
+            indegree.insert(id, node.inputs.len());
+            for input in &node.inputs {
+                adj.entry(*input).or_default().push(id);
+            }
+        }
+
+        let mut zero_indegree: Vec<NodeId> = indegree
+            .iter()
+            .filter(|(_, &deg)| deg == 0)
+            .map(|(&id, _)| id)
+            .collect();
+        zero_indegree.sort_by_key(|n| n.index());
+
+        let mut order = Vec::with_capacity(self.nodes.len());
+
+        while let Some(id) = zero_indegree.first().cloned() {
+            zero_indegree.remove(0);
+            order.push(id);
+
+            if let Some(children) = adj.get(&id) {
+                for child in children {
+                    if let Some(entry) = indegree.get_mut(child) {
+                        *entry -= 1;
+                        if *entry == 0 {
+                            zero_indegree.push(*child);
+                        }
+                    }
+                }
+                zero_indegree.sort_by_key(|n| n.index());
+            }
+        }
+
+        if order.len() != self.nodes.len() {
+            return Err("Graph contains a cycle or disconnected nodes".to_string());
+        }
+
+        Ok(order)
+    }
+
     /// Evaluate the forward pass
     pub fn forward_pass(&mut self) -> Result<(), String> {
-        // Collect node data to iterate over
-        let node_ids: Vec<NodeId> = self.nodes.keys().copied().collect();
-        
+        let node_ids = self.topological_order()?;
+
         for node_id in node_ids {
             let node_type = self.nodes.get(&node_id).map(|n| &n.node_type).cloned();
             let inputs = self.nodes.get(&node_id).map(|n| n.inputs.clone()).unwrap_or_default();
@@ -241,10 +294,10 @@ impl ComputationalGraph {
                             node.value = Some(v);
                         }
                     }
-                    NodeType::Learnable(_, ) => {
-                        // Already initialized
+                    NodeType::Learnable(_) => {
+                        // Already initialized with value
                     }
-                    NodeType::Variable(_, ) => {
+                    NodeType::Variable(_) => {
                         if inputs.len() == 1 {
                             if let Some(input_val) = self.nodes.get(&inputs[0]).and_then(|n| n.value) {
                                 if let Some(node) = self.nodes.get_mut(&node_id) {
@@ -267,7 +320,16 @@ impl ComputationalGraph {
                                 "sub" => left_val - right_val,
                                 "mul" => left_val * right_val,
                                 "div" => left_val / right_val,
+                                "mod" => left_val % right_val,
                                 "pow" => left_val.powf(right_val),
+                                "eq" => if (left_val - right_val).abs() < f64::EPSILON { 1.0 } else { 0.0 },
+                                "ne" => if (left_val - right_val).abs() >= f64::EPSILON { 1.0 } else { 0.0 },
+                                "lt" => if left_val < right_val { 1.0 } else { 0.0 },
+                                "gt" => if left_val > right_val { 1.0 } else { 0.0 },
+                                "le" => if left_val <= right_val { 1.0 } else { 0.0 },
+                                "ge" => if left_val >= right_val { 1.0 } else { 0.0 },
+                                "and" => if left_val != 0.0 && right_val != 0.0 { 1.0 } else { 0.0 },
+                                "or" => if left_val != 0.0 || right_val != 0.0 { 1.0 } else { 0.0 },
                                 _ => return Err(format!("Unknown binary op: {}", op)),
                             };
                             
@@ -294,7 +356,6 @@ impl ComputationalGraph {
                         }
                     }
                     NodeType::FunctionCall(name) => {
-                        // Placeholder for function calls
                         match name.as_str() {
                             "sigmoid" => {
                                 if inputs.len() == 1 {
@@ -346,7 +407,8 @@ impl ComputationalGraph {
         }
 
         // Collect node IDs in reverse topological order (for backprop)
-        let node_ids: Vec<NodeId> = self.nodes.keys().copied().collect();
+        let mut node_ids = self.topological_order()?;
+        node_ids.reverse();
 
         // Backpropagate through each node
         for node_id in node_ids {
@@ -451,36 +513,48 @@ impl ComputationalGraph {
                                             }
                                         }
                                     }
+                                    "mod" => {
+                                        // Not differentiable in general; propagate zero gradients to be safe.
+                                    }
+                                    "and" | "or" => {
+                                        // Boolean-style ops on numeric values: no meaningful gradient; propagate zero.
+                                    }
                                     _ => {}
                                 }
                             }
                         }
                         NodeType::UnaryOp(ref op) => {
                             if inputs.len() == 1 {
-                                let val = self.nodes.get(&inputs[0]).and_then(|n| n.value);
-
                                 match op.as_str() {
                                     "neg" => {
-                                        // d(-a)/da = -1
                                         if let Some(node) = self.nodes.get_mut(&inputs[0]) {
                                             node.gradient = Some(node.gradient.unwrap_or(0.0) - gradient);
                                         }
                                     }
+                                    "not" => {
+                                        // Boolean not on numeric: gradient is zero (discontinuous); ignore.
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        NodeType::FunctionCall(name) => {
+                            if inputs.len() == 1 {
+                                let val = self.nodes.get(&inputs[0]).and_then(|n| n.value);
+                                match name.as_str() {
                                     "sigmoid" => {
-                                        // d(sigmoid(x))/dx = sigmoid(x)(1-sigmoid(x))
-                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) {
-                                            if let Some(v) = val {
-                                                let s = 1.0 / (1.0 + (-v).exp());
-                                                let local_grad = gradient * s * (1.0 - s);
+                                        if let Some(v) = val {
+                                            let s = 1.0 / (1.0 + (-v).exp());
+                                            let local_grad = gradient * s * (1.0 - s);
+                                            if let Some(node) = self.nodes.get_mut(&inputs[0]) {
                                                 node.gradient = Some(node.gradient.unwrap_or(0.0) + local_grad);
                                             }
                                         }
                                     }
                                     "relu" => {
-                                        // d(relu(x))/dx = 1 if x > 0 else 0
-                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) {
-                                            if let Some(v) = val {
-                                                let local_grad = if v > 0.0 { gradient } else { 0.0 };
+                                        if let Some(v) = val {
+                                            let local_grad = if v > 0.0 { gradient } else { 0.0 };
+                                            if let Some(node) = self.nodes.get_mut(&inputs[0]) {
                                                 node.gradient = Some(node.gradient.unwrap_or(0.0) + local_grad);
                                             }
                                         }
@@ -488,9 +562,6 @@ impl ComputationalGraph {
                                     _ => {}
                                 }
                             }
-                        }
-                        NodeType::FunctionCall(_) => {
-                            // TODO: Implement gradients for other functions
                         }
                     }
                 }
@@ -617,5 +688,21 @@ mod tests {
         let final_x = graph.get_node(x).and_then(|n| n.value);
         assert!(final_x.is_some());
         assert!(final_x.unwrap().abs() < 5.0); // Should have reduced from 5.0
+    }
+
+    #[test]
+    fn test_mod_and_or_forward() {
+        let mut graph = ComputationalGraph::new();
+        let a = graph.add_constant(5.0);
+        let b = graph.add_constant(2.0);
+        let m = graph.add_binary_op("mod", a, b);
+        let o = graph.add_binary_op("or", a, b);
+        let z = graph.add_constant(0.0);
+        let a2 = graph.add_binary_op("and", a, z);
+
+        graph.forward_pass().unwrap();
+        assert_eq!(graph.get_node(m).and_then(|n| n.value), Some(1.0));
+        assert_eq!(graph.get_node(o).and_then(|n| n.value), Some(1.0));
+        assert_eq!(graph.get_node(a2).and_then(|n| n.value), Some(0.0));
     }
 }

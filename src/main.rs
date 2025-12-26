@@ -1,7 +1,10 @@
 use clap::{Parser, Subcommand};
-use noma_compiler::{Lexer, Parser as NomaParser, ComputationalGraph};
+use noma_compiler::{Lexer, Parser as NomaParser, ComputationalGraph, LLVMCodegen, PTXCodegen};
 use std::fs;
 use std::path::PathBuf;
+use std::collections::HashMap;
+use std::process::Command;
+use std::env;
 
 #[derive(Parser)]
 #[command(name = "noma")]
@@ -33,6 +36,44 @@ enum Commands {
         graph: bool,
     },
 
+    /// Compile NOMA to LLVM IR
+    Compile {
+        /// Input .noma file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Output LLVM IR file (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Optimize the LLVM IR (uses opt)
+        #[arg(short = 'O', long)]
+        optimize: bool,
+
+        /// Optimization level (1,2,3). Defaults to 3 when optimize is enabled.
+        #[arg(long = "opt-level", value_parser = clap::value_parser!(u8).range(1..=3))]
+        opt_level: Option<u8>,
+
+        /// Emit native assembly via llc (if available)
+        #[arg(long = "emit-asm")]
+        emit_asm: bool,
+
+        /// Emit native object via llc (if available)
+        #[arg(long = "emit-obj")]
+        emit_obj: bool,
+    },
+
+    /// Compile NOMA to PTX (placeholder backend)
+    CompilePtx {
+        /// Input .noma file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Output PTX file (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
     /// Check syntax without building
     Check {
         /// Input .noma file
@@ -54,6 +95,12 @@ fn main() -> anyhow::Result<()> {
         Commands::Build { file, ast: print_ast, tokens: print_tokens, graph: print_graph } => {
             build_file(file, print_ast, print_tokens, print_graph)?;
         }
+            Commands::Compile { file, output, optimize, opt_level, emit_asm, emit_obj } => {
+                compile_to_llvm(file, output, optimize, opt_level, emit_asm, emit_obj)?;
+        }
+        Commands::CompilePtx { file, output } => {
+            compile_to_ptx(file, output)?;
+        }
         Commands::Check { file } => {
             check_file(file)?;
         }
@@ -63,11 +110,39 @@ fn main() -> anyhow::Result<()> {
         Commands::Version => {
             println!("NOMA Compiler v{}", env!("CARGO_PKG_VERSION"));
             println!("The Neural-Oriented Machine Architecture");
-            println!("Status: Pre-Alpha (Milestone 3 - The Tipping Point)");
+            println!("Status: Pre-Alpha (Milestone 4 - The Metal)");
         }
     }
 
     Ok(())
+}
+
+fn run_optimize_loop(
+    graph: &mut ComputationalGraph,
+    variables: &HashMap<String, noma_compiler::NodeId>,
+    cond_id: noma_compiler::NodeId,
+    objective_id: noma_compiler::NodeId,
+    target: &str,
+    learning_rate: f64,
+    max_iter: usize,
+) -> Result<(), String> {
+    if !variables.contains_key(target) {
+        return Err(format!("Optimize target '{}' not defined", target));
+    }
+
+    for _ in 0..max_iter {
+        graph.forward_pass()?;
+        let cond_val = graph.get_node(cond_id).and_then(|n| n.value).unwrap_or(0.0);
+        if cond_val != 0.0 {
+            return Ok(());
+        }
+
+        graph.backward_pass(objective_id)?;
+        graph.optimize_step(learning_rate)?;
+        graph.reset_gradients();
+    }
+
+    Err("Optimize loop reached max iterations without satisfying condition".to_string())
 }
 
 fn build_file(file: PathBuf, print_ast: bool, print_tokens: bool, print_graph: bool) -> anyhow::Result<()> {
@@ -198,6 +273,311 @@ fn run_demo() -> anyhow::Result<()> {
     println!("  x = {:.6}", final_x);
     println!("  y = {:.6}", final_y);
     println!("\nSuccess! Gradient descent found a minimum near x = 0");
+
+    Ok(())
+}
+
+fn compile_to_llvm(file: PathBuf, output: Option<PathBuf>, optimize: bool, opt_level: Option<u8>, emit_asm: bool, emit_obj: bool) -> anyhow::Result<()> {
+    // Read source file
+    let source = fs::read_to_string(&file)?;
+
+    // Tokenize and parse
+    let mut lexer = Lexer::new(&source);
+    let tokens = lexer.tokenize().map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    
+    let mut parser = NomaParser::new(tokens);
+    let ast = parser.parse().map_err(|e| anyhow::anyhow!("{:?}", e))?;
+
+    // Lower the first function (main) to a computational graph
+    let mut graph = ComputationalGraph::new();
+    let mut variables: HashMap<String, noma_compiler::NodeId> = HashMap::new();
+    let mut last_node: Option<noma_compiler::NodeId> = None;
+
+    // Find a function to compile (prefers main)
+    let maybe_func = ast.items.iter().find_map(|item| {
+        if let noma_compiler::Item::Function(func) = item {
+            if func.name == "main" { return Some(func); }
+        }
+        None
+    }).or_else(|| ast.items.iter().find_map(|item| {
+        if let noma_compiler::Item::Function(func) = item { Some(func) } else { None }
+    }));
+
+    let func = maybe_func.ok_or_else(|| anyhow::anyhow!("No function found to compile"))?;
+
+    fn lower_statements(
+        graph: &mut ComputationalGraph,
+        variables: &mut HashMap<String, noma_compiler::NodeId>,
+        stmts: &[noma_compiler::Statement],
+        last_node: &mut Option<noma_compiler::NodeId>,
+    ) -> Result<(), String> {
+        for stmt in stmts {
+            match stmt {
+                noma_compiler::Statement::LearnDeclaration { name, value } => {
+                    let init_val = if let noma_compiler::Expression::Number(n) = value { *n } else { 0.0 };
+                    let node_id = graph.add_learnable(name.clone(), init_val);
+                    variables.insert(name.clone(), node_id);
+                    *last_node = Some(node_id);
+                }
+                noma_compiler::Statement::LetDeclaration { name, value } => {
+                    let val_id = graph.build_from_expression(value, variables)?;
+                    variables.insert(name.clone(), val_id);
+                    *last_node = Some(val_id);
+                }
+                noma_compiler::Statement::Assignment { name, value } => {
+                    let val_id = graph.build_from_expression(value, variables)?;
+                    variables.insert(name.clone(), val_id);
+                    *last_node = Some(val_id);
+                }
+                noma_compiler::Statement::Minimize(expr) => {
+                    let id = graph.build_from_expression(expr, variables)?;
+                    *last_node = Some(id);
+                }
+                noma_compiler::Statement::Expression(expr) => {
+                    let id = graph.build_from_expression(expr, variables)?;
+                    *last_node = Some(id);
+                }
+                noma_compiler::Statement::Return(opt_expr) => {
+                    if let Some(expr) = opt_expr {
+                        let id = graph.build_from_expression(expr, variables)?;
+                        *last_node = Some(id);
+                    }
+                }
+                noma_compiler::Statement::Block(inner) => {
+                    lower_statements(graph, variables, inner, last_node)?;
+                }
+                noma_compiler::Statement::OptimizeLoop { target, condition, body, .. } => {
+                    let cond_id = graph.build_from_expression(condition, variables)?;
+
+                    let mut loop_last: Option<noma_compiler::NodeId> = None;
+                    lower_statements(graph, variables, body, &mut loop_last)?;
+                    let objective = loop_last.or(*last_node).ok_or_else(|| "Optimize loop body produced no expressions".to_string())?;
+
+                    run_optimize_loop(graph, variables, cond_id, objective, target, 0.1, 1000)?;
+                    *last_node = Some(objective);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    lower_statements(&mut graph, &mut variables, &func.body, &mut last_node)
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    // Ensure we have something to return
+    let _output_node = last_node.ok_or_else(|| anyhow::anyhow!("No expressions to compile"))?;
+
+    // Perform forward pass to compute values (best-effort; allows constants/learnables)
+    let _ = graph.forward_pass();
+
+    // Generate LLVM IR
+    let mut codegen = LLVMCodegen::new();
+    let mut ir = codegen.generate(&graph).map_err(|e| anyhow::anyhow!(e))?;
+
+    let mut run_opt = optimize || opt_level.is_some();
+    if run_opt {
+        let level = opt_level.unwrap_or(3).clamp(1, 3);
+        let opt_flag = format!("-O{}", level);
+
+        // Check opt availability
+        match Command::new("opt").arg("--version").output() {
+            Ok(_) => {}
+            Err(_) => {
+                println!("[warn] --optimize requested but 'opt' not found in PATH; emitting unoptimized IR");
+                run_opt = false;
+            }
+        }
+
+        if run_opt {
+            let tmp_dir = env::temp_dir();
+            let input_path = tmp_dir.join("noma_ir.ll");
+            let output_path = tmp_dir.join("noma_ir_opt.ll");
+            fs::write(&input_path, &ir)?;
+
+            let status = Command::new("opt")
+                .arg("-S")
+                .arg(&opt_flag)
+                .arg(&input_path)
+                .arg("-o")
+                .arg(&output_path)
+                .status();
+
+            match status {
+                Ok(s) if s.success() => {
+                    ir = fs::read_to_string(&output_path)?;
+                    println!("[info] --optimize applied via opt {}", opt_flag);
+                }
+                _ => {
+                    println!("[warn] --optimize requested but opt failed; emitting unoptimized IR");
+                }
+            }
+        }
+    }
+
+    // Optionally emit assembly/object via llc
+    if emit_asm || emit_obj {
+        match Command::new("llc").arg("--version").output() {
+            Ok(_) => {}
+            Err(_) => {
+                println!("[warn] --emit-asm/--emit-obj requested but 'llc' not found in PATH; skipping");
+                // If neither output requested now possible, fall through with IR only
+                return output_ir(output, ir);
+            }
+        }
+
+        let tmp_dir = env::temp_dir();
+        let ir_path = tmp_dir.join("noma_ir.ll");
+        fs::write(&ir_path, &ir)?;
+
+        if emit_asm {
+            let asm_path = tmp_dir.join("noma.s");
+            let status = Command::new("llc")
+                .arg("-filetype=asm")
+                .arg(&ir_path)
+                .arg("-o")
+                .arg(&asm_path)
+                .status();
+            if let Ok(s) = status {
+                if s.success() {
+                    let asm = fs::read_to_string(&asm_path)?;
+                    println!("=== ASM (llc) ===\n{}", asm);
+                } else {
+                    println!("[warn] llc asm emission failed (status {})", s);
+                }
+            }
+        }
+
+        if emit_obj {
+            let obj_path = tmp_dir.join("noma.o");
+            let status = Command::new("llc")
+                .arg("-filetype=obj")
+                .arg(&ir_path)
+                .arg("-o")
+                .arg(&obj_path)
+                .status();
+            if let Ok(s) = status {
+                if s.success() {
+                    println!("[info] Object emitted at {}", obj_path.display());
+                } else {
+                    println!("[warn] llc object emission failed (status {})", s);
+                }
+            }
+        }
+    }
+
+    output_ir(output, ir)
+}
+
+fn output_ir(output: Option<PathBuf>, ir: String) -> anyhow::Result<()> {
+    match output {
+        Some(out_file) => {
+            fs::write(out_file.clone(), ir.clone())?;
+            println!("Generated LLVM IR to: {}", out_file.display());
+        }
+        None => {
+            println!("{}", ir);
+        }
+    }
+    Ok(())
+}
+
+fn compile_to_ptx(file: PathBuf, output: Option<PathBuf>) -> anyhow::Result<()> {
+    // Read source file
+    let source = fs::read_to_string(&file)?;
+
+    // Tokenize and parse
+    let mut lexer = Lexer::new(&source);
+    let tokens = lexer.tokenize().map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    
+    let mut parser = NomaParser::new(tokens);
+    let ast = parser.parse().map_err(|e| anyhow::anyhow!("{:?}", e))?;
+
+    // Lower first function to graph (reuse compile_to_llvm lowering helper)
+    let mut graph = ComputationalGraph::new();
+    let mut variables: HashMap<String, noma_compiler::NodeId> = HashMap::new();
+    let mut last_node: Option<noma_compiler::NodeId> = None;
+
+    let maybe_func = ast.items.iter().find_map(|item| {
+        if let noma_compiler::Item::Function(func) = item {
+            if func.name == "main" { return Some(func); }
+        }
+        None
+    }).or_else(|| ast.items.iter().find_map(|item| {
+        if let noma_compiler::Item::Function(func) = item { Some(func) } else { None }
+    }));
+
+    let func = maybe_func.ok_or_else(|| anyhow::anyhow!("No function found to compile"))?;
+
+    fn lower_statements(
+        graph: &mut ComputationalGraph,
+        variables: &mut HashMap<String, noma_compiler::NodeId>,
+        stmts: &[noma_compiler::Statement],
+        last_node: &mut Option<noma_compiler::NodeId>,
+    ) -> Result<(), String> {
+        for stmt in stmts {
+            match stmt {
+                noma_compiler::Statement::LearnDeclaration { name, value } => {
+                    let init_val = if let noma_compiler::Expression::Number(n) = value { *n } else { 0.0 };
+                    let node_id = graph.add_learnable(name.clone(), init_val);
+                    variables.insert(name.clone(), node_id);
+                    *last_node = Some(node_id);
+                }
+                noma_compiler::Statement::LetDeclaration { name, value } => {
+                    let val_id = graph.build_from_expression(value, variables)?;
+                    variables.insert(name.clone(), val_id);
+                    *last_node = Some(val_id);
+                }
+                noma_compiler::Statement::Assignment { name, value } => {
+                    let val_id = graph.build_from_expression(value, variables)?;
+                    variables.insert(name.clone(), val_id);
+                    *last_node = Some(val_id);
+                }
+                noma_compiler::Statement::Minimize(expr) => {
+                    let id = graph.build_from_expression(expr, variables)?;
+                    *last_node = Some(id);
+                }
+                noma_compiler::Statement::Expression(expr) => {
+                    let id = graph.build_from_expression(expr, variables)?;
+                    *last_node = Some(id);
+                }
+                noma_compiler::Statement::Return(opt_expr) => {
+                    if let Some(expr) = opt_expr {
+                        let id = graph.build_from_expression(expr, variables)?;
+                        *last_node = Some(id);
+                    }
+                }
+                noma_compiler::Statement::Block(inner) => {
+                    lower_statements(graph, variables, inner, last_node)?;
+                }
+                noma_compiler::Statement::OptimizeLoop { target, condition, body, .. } => {
+                    let cond_id = graph.build_from_expression(condition, variables)?;
+                    let mut loop_last: Option<noma_compiler::NodeId> = None;
+                    lower_statements(graph, variables, body, &mut loop_last)?;
+                    let objective = loop_last.or(*last_node).ok_or_else(|| "Optimize loop body produced no expressions".to_string())?;
+
+                    run_optimize_loop(graph, variables, cond_id, objective, target, 0.1, 1000)?;
+                    *last_node = Some(objective);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    lower_statements(&mut graph, &mut variables, &func.body, &mut last_node)
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    let mut codegen = PTXCodegen::new();
+    let ptx = codegen.generate(&graph).map_err(|e| anyhow::anyhow!(e))?;
+
+    match output {
+        Some(out_file) => {
+            fs::write(out_file.clone(), ptx.clone())?;
+            println!("Generated PTX (placeholder) to: {}", out_file.display());
+        }
+        None => {
+            println!("{}", ptx);
+        }
+    }
 
     Ok(())
 }

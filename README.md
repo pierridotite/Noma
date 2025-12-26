@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/build-passing-green.svg)]()
 [![Stage](https://img.shields.io/badge/Stage-Pre--Alpha-orange)]()
-[![Milestone 3](https://img.shields.io/badge/Milestone%203-Complete-brightgreen)]()
+[![Milestone 4](https://img.shields.io/badge/Milestone%204-In%20Progress-blue)]()
 
 > **The "C" of the Brain.**
 > The first systems programming language with native, compile-time differentiation.
@@ -108,7 +108,7 @@ NOMA operates as a modern compiler pipeline based on LLVM and MLIR infrastructur
 
 We are currently in the **Bootstrap Phase**. The immediate goal is not full GPU support, but achieving the "Tipping Point": a minimal compiler capable of differentiating a scalar function on the CPU.
 
-**Current Milestone:** Milestone 3 - The Tipping Point (COMPLETED - THE MVP IS LIVE!)
+**Current Milestone:** Milestone 4 - The Metal (in progress)
 
 ### Milestone 1: The Skeleton - COMPLETED
 
@@ -138,14 +138,28 @@ We are currently in the **Bootstrap Phase**. The immediate goal is not full GPU 
 * [x] **Optimization Loop:** Generating code that updates variables based on gradients.
 * [x] **Demo:** A script solving `y = x^2` (finding x=0 via gradient descent).
 
-**Status:** Complete! The tipping point reached. CPU autodiff working end-to-end with demonstrated convergence.
+**Status:** Complete. CPU autodiff working end-to-end with demonstrated convergence.
 
-### Milestone 4: The Metal
+#### Recent additions (post-M3)
+
+- `optimize … until` now executes gradient steps (SGD) until the condition flips non-zero.
+- New operators `%`, `^/**`, `&&`, `||` parsed, evaluated, and emitted in LLVM/PTX.
+- Graph forward/backward uses deterministic topological order; function-call gradients for `sigmoid`/`relu`.
+- LLVM codegen initializes learnables/vars safely; PTX emits logical ops with predicates.
+- Extended regression tests across lexer, parser, graph, LLVM/PTX codegen.
+
+### Milestone 4: The Metal (in progress)
 
 *Objective: Performance and Hardware.*
 
-* [ ] LLVM IR generation.
-* [ ] PTX/CUDA backend integration.
+* [x] LLVM IR generation for scalar graphs (CPU).
+* [x] Minimal PTX backend for arithmetic, pow, sigmoid/relu, logical ops.
+* [x] Deterministic graph execution order (topological) for forward/backward.
+* [x] Native execution of `optimize … until` loops with SGD.
+* [x] Language support for `%`, `^/**`, `&&`, `||` with codegen on both backends.
+* [ ] Rich tensor types and kernels.
+* [ ] Full NVPTX lowering and host stubs.
+* [ ] Optimized LLVM passes per target.
 
 ## Contributing
 

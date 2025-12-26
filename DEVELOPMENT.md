@@ -1,6 +1,6 @@
 # NOMA Compiler
 
-**Status:** Milestone 1 Complete - The Skeleton ✓
+**Status:** Milestone 4 In Progress** (CPU autodiff complete; LLVM/PTX backends present but minimal)
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ Check syntax:
 cargo run -- check examples/xor.noma
 ```
 
-### Test the Lexer
+### Run the Test Suite
 
 ```bash
 cargo test
@@ -51,20 +51,18 @@ noma/
 
 ## What Works Now
 
-- ✓ Complete lexer with keyword recognition (`learn`, `optimize`, `tensor`, etc.)
-- ✓ Operator tokenization (+, -, *, /, ==, !=, <, >, etc.)
-- ✓ Number literals (integers and floats)
-- ✓ Identifiers and variable names
-- ✓ Comment support (`//`)
-- ✓ CLI with `build` and `check` commands
-- ✓ Unit tests for tokenization
+- Lexer: keywords, comments, numbers, identifiers, operators including `%`, `^/**`, `&&`, `||`.
+- Parser: functions, structs, blocks, assignments, `minimize`, `optimize … until` with proper precedence for power/mod.
+- Computational graph: topological forward/backward, gradients for arithmetic and sigmoid/relu calls; safe handling of non-differentiable ops (mod/and/or).
+- Backends: LLVM IR emission for arithmetic, power, comparisons, logical ops; PTX emission for the same with pow approximation.
+- Optimize loops: executed with SGD until the condition becomes true.
+- Tests: coverage across lexer, parser, graph, LLVM/PTX codegen.
 
-## Next Steps (Milestone 2)
+## Next Steps
 
-- [ ] Parser implementation (recursive descent)
-- [ ] AST node definitions
-- [ ] Type system foundation
-- [ ] Computational graph representation
+- Tensor types and GPU kernels.
+- Richer type checking and semantics.
+- More differentiation-aware intrinsics and math library.
 
 ## Testing
 

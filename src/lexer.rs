@@ -54,7 +54,14 @@ impl Lexer {
                 TokenType::Newline
             }
             '+' => TokenType::Plus,
-            '*' => TokenType::Star,
+            '*' => {
+                if self.peek() == '*' {
+                    self.advance();
+                    TokenType::Power
+                } else {
+                    TokenType::Star
+                }
+            }
             '/' => {
                 if self.peek() == '/' {
                     // Single-line comment
@@ -65,6 +72,7 @@ impl Lexer {
                 }
                 TokenType::Slash
             }
+            '%' => TokenType::Percent,
             '(' => TokenType::LParen,
             ')' => TokenType::RParen,
             '{' => TokenType::LBrace,
@@ -115,6 +123,23 @@ impl Lexer {
                     return Err(NomaError::unexpected_char(ch, start_line, start_column));
                 }
             }
+            '&' => {
+                if self.peek() == '&' {
+                    self.advance();
+                    TokenType::And
+                } else {
+                    return Err(NomaError::unexpected_char(ch, start_line, start_column));
+                }
+            }
+            '|' => {
+                if self.peek() == '|' {
+                    self.advance();
+                    TokenType::Or
+                } else {
+                    return Err(NomaError::unexpected_char(ch, start_line, start_column));
+                }
+            }
+            '^' => TokenType::Power,
             _ if ch.is_alphabetic() || ch == '_' => {
                 let identifier = self.read_identifier(ch);
                 self.keyword_or_identifier(identifier)
@@ -242,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_operators() {
-        let source = "+ - * / = == < > <= >= != ->";
+        let source = "+ - * / % ** = == < > <= >= != -> && || ^";
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize().unwrap();
 
@@ -250,10 +275,15 @@ mod tests {
         assert_eq!(tokens[1].token_type, TokenType::Minus);
         assert_eq!(tokens[2].token_type, TokenType::Star);
         assert_eq!(tokens[3].token_type, TokenType::Slash);
-        assert_eq!(tokens[4].token_type, TokenType::Assign);
-        assert_eq!(tokens[5].token_type, TokenType::Equal);
-        assert_eq!(tokens[10].token_type, TokenType::NotEq);
-        assert_eq!(tokens[11].token_type, TokenType::Arrow);
+        assert_eq!(tokens[4].token_type, TokenType::Percent);
+        assert_eq!(tokens[5].token_type, TokenType::Power);
+        assert_eq!(tokens[6].token_type, TokenType::Assign);
+        assert_eq!(tokens[7].token_type, TokenType::Equal);
+        assert_eq!(tokens[12].token_type, TokenType::NotEq);
+        assert_eq!(tokens[13].token_type, TokenType::Arrow);
+        assert_eq!(tokens[14].token_type, TokenType::And);
+        assert_eq!(tokens[15].token_type, TokenType::Or);
+        assert_eq!(tokens[16].token_type, TokenType::Power);
     }
 
     #[test]
