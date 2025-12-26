@@ -22,3 +22,6 @@ path = "src/main.rs"
 [lib]
 name = "noma_compiler"
 path = "src/lib.rs"
+
+[features]
+cuda = []

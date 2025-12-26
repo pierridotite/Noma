@@ -1,4 +1,4 @@
-use crate::graph::{ComputationalGraph, NodeId, NodeType};
+use crate::graph::{ComputationalGraph, NodeId, NodeType, Value};
 use std::collections::HashMap;
 
 /// PTX code generator (minimal)
@@ -49,15 +49,23 @@ impl PTXCodegen {
             })
             .collect();
 
-        // Map variables/learnables to input offsets
-        let mut var_offsets: HashMap<NodeId, usize> = HashMap::new();
-        let mut next_in = 0usize;
+        // Map variables/learnables to input offsets and lengths (scalars => len=1)
+        #[derive(Clone, Copy, Debug)]
+        struct VarInfo { base_bytes: u64, len: u64 }
+        let mut var_offsets: HashMap<NodeId, VarInfo> = HashMap::new();
+        let mut next_in_elems = 0u64;
         for id in &ids {
             if let Some(node) = nodes.get(id) {
                 match node.node_type {
                     NodeType::Variable(_) | NodeType::Learnable(_) => {
-                        var_offsets.insert(*id, next_in);
-                        next_in += 1;
+                        let len = match &node.value {
+                            Some(Value::Scalar(_)) => 1u64,
+                            Some(Value::Tensor(t)) => t.data.len() as u64,
+                            None => 1u64,
+                        };
+                        let info = VarInfo { base_bytes: next_in_elems * 8, len };
+                        var_offsets.insert(*id, info);
+                        next_in_elems += len;
                     }
                     _ => {}
                 }
@@ -67,18 +75,44 @@ impl PTXCodegen {
         let mut reg_map: HashMap<NodeId, String> = HashMap::new();
         self.reg_count = 0;
 
+        // Detect elementwise mode: any variable/learnable with tensor value
+        let mut elementwise_len: Option<u64> = None;
+        for (_id, info) in &var_offsets {
+            if info.len > 1 {
+                if let Some(cur) = elementwise_len {
+                    if cur != info.len { return Err("PTX: mismatched tensor lengths among inputs".to_string()); }
+                } else {
+                    elementwise_len = Some(info.len);
+                }
+            }
+        }
+
         // Pre-count registers (worst case: 5x nodes to cover pow+sigmoid temps)
-        let reg_decl = format!(".reg .f64 %f<{}>;\n", ids.len().saturating_mul(5).max(8));
+        let reg_decl = format!(".reg .f64 %f<{}>;\n", ids.len().saturating_mul(5).max(12));
 
         let mut out = String::new();
         out.push_str("// NOMA PTX backend (minimal)\n");
         out.push_str(".version 7.0\n.target sm_70\n.address_size 64\n\n");
-        out.push_str(".visible .entry compute(\n    .param .u64 in_ptr,\n    .param .u64 out_ptr\n) {\n");
+        if elementwise_len.is_some() {
+            out.push_str(".visible .entry compute(\n    .param .u64 in_ptr,\n    .param .u64 out_ptr,\n    .param .u32 n_elems\n) {\n");
+        } else {
+            out.push_str(".visible .entry compute(\n    .param .u64 in_ptr,\n    .param .u64 out_ptr\n) {\n");
+        }
             out.push_str("    .reg .pred %p<3>;\n");
         out.push_str("    .reg .u64 %rd<4>;\n");
+        if elementwise_len.is_some() {
+            out.push_str("    .reg .u64 %rd_idx;\n    .reg .u32 %r_tid;\n    .reg .u32 %r_n;\n");
+        }
         out.push_str(&format!("    {}", reg_decl));
         out.push_str("\n    ld.param.u64 %rd0, [in_ptr];\n");
         out.push_str("    ld.param.u64 %rd1, [out_ptr];\n");
+        if elementwise_len.is_some() {
+            out.push_str("    ld.param.u32 %r_n, [n_elems];\n");
+            out.push_str("    mov.u32 %r_tid, %tid.x;\n");
+            out.push_str("    setp.ge.u32 %p0, %r_tid, %r_n;\n");
+            out.push_str("    @%p0 ret;\n");
+            out.push_str("    mul.wide.u32 %rd_idx, %r_tid, 8;\n");
+        }
 
         let mut last: Option<NodeId> = None;
 
@@ -89,13 +123,26 @@ impl PTXCodegen {
             last = Some(id);
 
             match &node.node_type {
-                NodeType::Constant(v) => {
-                    out.push_str(&format!("    mov.f64 {}, {}d0; // const {}\n", dest, self.fmt_f64(*v), self.fmt_f64(*v)));
+                NodeType::Constant(val) => {
+                    match val {
+                        Value::Scalar(v) => {
+                            out.push_str(&format!("    mov.f64 {}, {}d0; // const {}\n", dest, self.fmt_f64(*v), self.fmt_f64(*v)));
+                        }
+                        Value::Tensor(_) => {
+                            return Err("Tensor constants are not yet supported in PTX codegen".to_string());
+                        }
+                    }
                 }
                 NodeType::Learnable(_) | NodeType::Variable(_) => {
-                    let idx = *var_offsets.get(&id).ok_or("missing var offset")? as u64;
-                    out.push_str(&format!("    add.u64 %rd2, %rd0, {};\n", idx * 8));
-                    out.push_str(&format!("    ld.global.f64 {}, [%rd2]; // load var\n", dest));
+                    let info = *var_offsets.get(&id).ok_or("missing var offset")?;
+                    if elementwise_len.is_some() && info.len > 1 {
+                        out.push_str(&format!("    add.u64 %rd2, %rd0, {};\n", info.base_bytes));
+                        out.push_str("    add.u64 %rd2, %rd2, %rd_idx;\n");
+                        out.push_str(&format!("    ld.global.f64 {}, [%rd2]; // load tensor elem\n", dest));
+                    } else {
+                        out.push_str(&format!("    add.u64 %rd2, %rd0, {};\n", info.base_bytes));
+                        out.push_str(&format!("    ld.global.f64 {}, [%rd2]; // load var\n", dest));
+                    }
                 }
                 NodeType::BinaryOp(op) => {
                     if node.inputs.len() != 2 {
@@ -171,10 +218,19 @@ impl PTXCodegen {
         }
 
         let outs = if outputs.is_empty() { last.into_iter().collect() } else { outputs.clone() };
-        for (i, oid) in outs.iter().enumerate() {
-            let reg = reg_map.get(oid).ok_or("missing output reg")?;
-            out.push_str(&format!("    add.u64 %rd3, %rd1, {};\n", (i as u64) * 8));
-            out.push_str(&format!("    st.global.f64 [%rd3], {};\n", reg));
+        if elementwise_len.is_some() {
+            if let Some(oid) = outs.last() {
+                let reg = reg_map.get(oid).ok_or("missing output reg")?;
+                out.push_str("    add.u64 %rd3, %rd1, 0;\n");
+                out.push_str("    add.u64 %rd3, %rd3, %rd_idx;\n");
+                out.push_str(&format!("    st.global.f64 [%rd3], {};\n", reg));
+            }
+        } else {
+            for (i, oid) in outs.iter().enumerate() {
+                let reg = reg_map.get(oid).ok_or("missing output reg")?;
+                out.push_str(&format!("    add.u64 %rd3, %rd1, {};\n", (i as u64) * 8));
+                out.push_str(&format!("    st.global.f64 [%rd3], {};\n", reg));
+            }
         }
         out.push_str("    ret;\n}\n");
         Ok(out)
@@ -212,5 +268,18 @@ mod tests {
         let code = gen.generate(&graph).expect("ptx generation");
         assert!(code.contains("rem.rn.f64"));
         assert!(code.contains("or.pred"));
+    }
+
+    #[test]
+    fn test_ptx_tensor_elementwise_header() {
+        let mut graph = ComputationalGraph::new();
+        let w = graph.add_learnable_tensor("w".to_string(), vec![1.0, 2.0, 3.0, 4.0], vec![2, 2]).unwrap();
+        let c = graph.add_constant(2.0);
+        let _m = graph.add_binary_op("mul", w, c);
+
+        let mut gen = PTXCodegen::new();
+        let code = gen.generate(&graph).expect("ptx generation");
+        assert!(code.contains(".param .u32 n_elems"));
+        assert!(code.contains("add.u64 %rd2, %rd2, %rd_idx"));
     }
 }

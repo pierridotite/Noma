@@ -72,6 +72,14 @@ enum Commands {
         /// Output PTX file (default: stdout)
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Number of elements for elementwise kernels (host stub)
+        #[arg(long = "n-elems")] 
+        n_elems: Option<u32>,
+
+        /// Print a pseudo host launch stub for the PTX kernel
+        #[arg(long = "host-stub")]
+        host_stub: bool,
     },
 
     /// Check syntax without building
@@ -86,6 +94,17 @@ enum Commands {
 
     /// Display compiler version and build info
     Version,
+
+    /// Load PTX and attempt an elementwise kernel launch (feature: cuda)
+    RunPtx {
+        /// PTX input file to load
+        #[arg(value_name = "PTX_FILE")]
+        ptx_file: PathBuf,
+
+        /// Number of elements for elementwise kernel
+        #[arg(long = "n-elems")]
+        n_elems: u32,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -98,8 +117,8 @@ fn main() -> anyhow::Result<()> {
             Commands::Compile { file, output, optimize, opt_level, emit_asm, emit_obj } => {
                 compile_to_llvm(file, output, optimize, opt_level, emit_asm, emit_obj)?;
         }
-        Commands::CompilePtx { file, output } => {
-            compile_to_ptx(file, output)?;
+        Commands::CompilePtx { file, output, n_elems, host_stub } => {
+            compile_to_ptx(file, output, n_elems, host_stub)?;
         }
         Commands::Check { file } => {
             check_file(file)?;
@@ -111,6 +130,18 @@ fn main() -> anyhow::Result<()> {
             println!("NOMA Compiler v{}", env!("CARGO_PKG_VERSION"));
             println!("The Neural-Oriented Machine Architecture");
             println!("Status: Pre-Alpha (Milestone 4 - The Metal)");
+        }
+        Commands::RunPtx { ptx_file, n_elems } => {
+            let ptx = fs::read_to_string(&ptx_file)?;
+            match noma_compiler::run_elementwise_kernel(&ptx, "compute", n_elems) {
+                Ok(out) => {
+                    println!("Kernel executed. First 8 outputs: {:?}", &out[..out.len().min(8)]);
+                }
+                Err(e) => {
+                    println!("[info] PTX host launch unavailable: {}", e);
+                    println!("Hint: build with --features cuda and ensure NVIDIA drivers are installed.");
+                }
+            }
         }
     }
 
@@ -132,7 +163,7 @@ fn run_optimize_loop(
 
     for _ in 0..max_iter {
         graph.forward_pass()?;
-        let cond_val = graph.get_node(cond_id).and_then(|n| n.value).unwrap_or(0.0);
+        let cond_val = graph.get_node(cond_id).and_then(|n| n.value.clone()).and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None }).unwrap_or(0.0);
         if cond_val != 0.0 {
             return Ok(());
         }
@@ -243,8 +274,8 @@ fn run_demo() -> anyhow::Result<()> {
         // Forward pass
         graph.forward_pass().map_err(|e| anyhow::anyhow!(e))?;
         
-        let x_val = graph.get_node(x).and_then(|n| n.value).unwrap_or(0.0);
-        let y_val = graph.get_node(y).and_then(|n| n.value).unwrap_or(0.0);
+        let x_val = graph.get_node(x).and_then(|n| n.value.clone()).and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None }).unwrap_or(0.0);
+        let y_val = graph.get_node(y).and_then(|n| n.value.clone()).and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None }).unwrap_or(0.0);
 
         // Print progress
         if iteration == 0 || iteration % 5 == 0 || iteration == max_iterations {
@@ -266,8 +297,8 @@ fn run_demo() -> anyhow::Result<()> {
     }
 
     println!();
-    let final_x = graph.get_node(x).and_then(|n| n.value).unwrap_or(0.0);
-    let final_y = graph.get_node(y).and_then(|n| n.value).unwrap_or(0.0);
+    let final_x = graph.get_node(x).and_then(|n| n.value.clone()).and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None }).unwrap_or(0.0);
+    let final_y = graph.get_node(y).and_then(|n| n.value.clone()).and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None }).unwrap_or(0.0);
 
     println!("Final result:");
     println!("  x = {:.6}", final_x);
@@ -481,7 +512,7 @@ fn output_ir(output: Option<PathBuf>, ir: String) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn compile_to_ptx(file: PathBuf, output: Option<PathBuf>) -> anyhow::Result<()> {
+fn compile_to_ptx(file: PathBuf, output: Option<PathBuf>, n_elems: Option<u32>, host_stub: bool) -> anyhow::Result<()> {
     // Read source file
     let source = fs::read_to_string(&file)?;
 
@@ -577,6 +608,21 @@ fn compile_to_ptx(file: PathBuf, output: Option<PathBuf>) -> anyhow::Result<()> 
         None => {
             println!("{}", ptx);
         }
+    }
+
+    if host_stub {
+        let n = n_elems.unwrap_or(0);
+        println!("\n=== PTX Host Launch Stub (pseudo) ===");
+        println!("Kernel: compute");
+        println!("Params: .param .u64 in_ptr, .param .u64 out_ptr, .param .u32 n_elems");
+        println!("n_elems: {}", n);
+        println!("block_dim: 128");
+        println!("grid_dim: (n_elems + 127) / 128");
+        println!("Bind params: [in_ptr], [out_ptr], [n_elems]");
+        println!("Thread index: %tid.x, byte offset: %rd_idx = tid * 8");
+        println!("Load element: add.u64 %rd2, in_ptr, base + %rd_idx");
+        println!("Store element: add.u64 %rd3, out_ptr, %rd_idx");
+        println!("======================================\n");
     }
 
     Ok(())

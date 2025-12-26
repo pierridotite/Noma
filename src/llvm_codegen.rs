@@ -1,4 +1,4 @@
-use crate::graph::{ComputationalGraph, NodeId, NodeType};
+use crate::graph::{ComputationalGraph, NodeId, NodeType, Value};
 use std::collections::HashMap;
 
 /// LLVM IR code generator
@@ -56,15 +56,26 @@ impl LLVMCodegen {
             last_var = Some(var.clone());
 
             match &node.node_type {
-                NodeType::Constant(val) => {
+                NodeType::Constant(Value::Scalar(val)) => {
                     ir.push_str(&format!("  {} = fadd double {}, 0.0\n", var, self.fmt_f64(*val)));
                 }
+                NodeType::Constant(Value::Tensor(_)) => {
+                    return Err("Tensor values are not yet supported in LLVM codegen".to_string());
+                }
                 NodeType::Learnable(_) => {
-                    let val = node.value.unwrap_or(0.0);
+                    let val = match node.value.clone() {
+                        Some(Value::Scalar(v)) => v,
+                        Some(Value::Tensor(_)) => return Err("Tensor values are not yet supported in LLVM codegen".to_string()),
+                        None => 0.0,
+                    };
                     ir.push_str(&format!("  {} = fadd double {}, 0.0\n", var, self.fmt_f64(val)));
                 }
                 NodeType::Variable(_) => {
-                    let val = node.value.unwrap_or(0.0);
+                    let val = match node.value.clone() {
+                        Some(Value::Scalar(v)) => v,
+                        Some(Value::Tensor(_)) => return Err("Tensor values are not yet supported in LLVM codegen".to_string()),
+                        None => 0.0,
+                    };
                     ir.push_str(&format!("  {} = fadd double {}, 0.0\n", var, self.fmt_f64(val)));
                 }
                 NodeType::BinaryOp(op_str) => {

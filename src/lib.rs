@@ -9,12 +9,14 @@ pub mod parser;
 pub mod graph;
 pub mod llvm_codegen;
 pub mod ptx_codegen;
+pub mod nvptx_host;
 
 pub use lexer::Lexer;
 pub use token::{Token, TokenType};
 pub use error::NomaError;
 pub use ast::{Expression, Statement, Program, BinaryOperator, UnaryOperator, Item};
 pub use parser::Parser;
-pub use graph::{ComputationalGraph, NodeId};
+pub use graph::{ComputationalGraph, NodeId, NodeType, Tensor, Value};
 pub use llvm_codegen::LLVMCodegen;
 pub use ptx_codegen::PTXCodegen;
+pub use nvptx_host::run_elementwise_kernel;

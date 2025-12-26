@@ -157,9 +157,28 @@ We are currently in the **Bootstrap Phase**. The immediate goal is not full GPU 
 * [x] Deterministic graph execution order (topological) for forward/backward.
 * [x] Native execution of `optimize … until` loops with SGD.
 * [x] Language support for `%`, `^/**`, `&&`, `||` with codegen on both backends.
-* [ ] Rich tensor types and kernels.
-* [ ] Full NVPTX lowering and host stubs.
-* [ ] Optimized LLVM passes per target.
+* [x] Rich tensor types and kernels (phased):
+    - CPU: statically-shaped tensors (1D/2D), elementwise ops (+, -, *, /, pow, relu/sigmoid), broadcasting minimal.
+    - Autodiff: gradients for elementwise ops; shape checks.
+    - GPU: PTX kernels for elementwise ops; host launch stub (demo); full host wiring pending.
+* [x] Full NVPTX lowering and host stubs (phased):
+    - Emit NVPTX module with kernel entrypoints and parameter ABI (PTX backend emits `.entry compute`, params incl. `n_elems` for elementwise).
+    - Host stubs for loading modules, allocating device buffers, launching kernels (feature-gated `cuda` runtime; CLI `run-ptx`).
+    - Data movement helpers (host↔device) and synchronization (provided in `nvptx_host.rs`).
+* [ ] Optimized LLVM passes per target (phased):
+    - CPU: opt pipeline selection and fast-math toggles.
+    - GPU: NVPTX-specific opts (libdevice linkage, fast-math) and scheduling of kernels.
+
+### Milestone 5: The Ecosystem (Future)
+
+*Objective: Making NOMA usable for real-world tasks.*
+
+* [ ] **Standard Library (`std`):**
+    - File I/O (loading datasets from disk).
+    - Random Number Generation (Xavier/He initialization).
+    - Networking (basic sockets for distributed training).
+* [ ] **Interop:** FFI (Foreign Function Interface) to call C/Rust functions.
+* [ ] **Tooling:** Language Server (LSP) for syntax highlighting in VS Code.
 
 ## Contributing
 
