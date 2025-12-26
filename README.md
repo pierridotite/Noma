@@ -27,7 +27,7 @@
 
 **Gradients are computed by the compiler, not a library.**
 
-Most ML frameworks (PyTorch, TensorFlow) implement autodiff as a *runtime library*. NOMA implements it as a *compiler pass* — just like type checking or optimization. Your gradients are native code, not interpreter overhead.
+Most ML frameworks (PyTorch, TensorFlow) implement autodiff as a *runtime library*. NOMA implements it as a *compiler pass* - just like type checking or optimization. Your gradients are native code, not interpreter overhead.
 
 ```noma
 fn main() {
@@ -289,7 +289,7 @@ Source Code               Compilation Pipeline              Output
 
 **N**eural-**O**riented **M**achine **A**rchitecture
 
-The name reflects the philosophy: neural network training should be a *first-class language feature*, not a library bolted onto a general-purpose language. NOMA treats gradients like any other compiler concept — types, memory, optimization passes.
+The name reflects the philosophy: neural network training should be a *first-class language feature*, not a library bolted onto a general-purpose language. NOMA treats gradients like any other compiler concept - types, memory, optimization passes.
 
 ---
 
@@ -306,15 +306,15 @@ Contributions welcome! Please open an issue or PR. Areas particularly valuable:
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
 ## Learn More
 
-- **[Language Guide](LANGUAGE_GUIDE.md)** — Complete language reference
-- **[Examples](examples/)** — 28+ code samples
-- **[VS Code Extension](noma-vscode/)** — Syntax highlighting
+- **[Language Guide](LANGUAGE_GUIDE.md)** - Complete language reference
+- **[Examples](examples/)** - 28+ code samples
+- **[VS Code Extension](noma-vscode/)** - Syntax highlighting
 
 ---
 
