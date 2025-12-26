@@ -194,6 +194,8 @@ impl Parser {
             TokenType::If => self.parse_if_statement(),
             TokenType::While => self.parse_while_statement(),
             TokenType::Return => self.parse_return(),
+            TokenType::Alloc => self.parse_alloc(),
+            TokenType::Free => self.parse_free(),
             _ => {
                 // Handle assignment: identifier '=' expr;
                 if matches!(self.peek().token_type, TokenType::Identifier(_)) && matches!(self.peek_next().map(|t| &t.token_type), Some(TokenType::Assign)) {
@@ -304,6 +306,39 @@ impl Parser {
         self.consume(TokenType::Semicolon, "Expected ';'")?;
 
         Ok(Statement::Return(value))
+    }
+
+    /// Parse 'alloc' statement: alloc name = [dim1, dim2, ...];
+    fn parse_alloc(&mut self) -> Result<Statement, NomaError> {
+        self.consume(TokenType::Alloc, "Expected 'alloc'")?;
+        let name = self.parse_identifier("Expected variable name")?;
+        self.consume(TokenType::Assign, "Expected '='")?;
+        self.consume(TokenType::LBracket, "Expected '[' for shape dimensions")?;
+        
+        let mut shape = Vec::new();
+        if !matches!(self.peek().token_type, TokenType::RBracket) {
+            loop {
+                shape.push(self.parse_expression()?);
+                if !matches!(self.peek().token_type, TokenType::Comma) {
+                    break;
+                }
+                self.advance(); // consume comma
+            }
+        }
+        
+        self.consume(TokenType::RBracket, "Expected ']'")?;
+        self.consume(TokenType::Semicolon, "Expected ';'")?;
+        
+        Ok(Statement::Alloc { name, shape })
+    }
+
+    /// Parse 'free' statement: free name;
+    fn parse_free(&mut self) -> Result<Statement, NomaError> {
+        self.consume(TokenType::Free, "Expected 'free'")?;
+        let name = self.parse_identifier("Expected variable name")?;
+        self.consume(TokenType::Semicolon, "Expected ';'")?;
+        
+        Ok(Statement::Free { name })
     }
 
     /// Parse an expression with operator precedence

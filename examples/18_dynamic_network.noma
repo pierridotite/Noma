@@ -1,0 +1,29 @@
+// Example: Dynamic Network Growth
+// Demonstrates using alloc for growing neural network capacity
+
+fn main() {
+    // Initial weights
+    learn w1 = 0.5;
+    learn w2 = 0.5;
+    
+    // Allocate workspace for intermediate computations
+    // This simulates dynamically sized hidden layers
+    alloc workspace = [4];
+    
+    // Simulate a simple 2-stage computation
+    let input = 1.0;
+    
+    // Stage 1: compute weighted sum
+    let stage1 = input * w1;
+    
+    // Stage 2: add more capacity 
+    let stage2 = stage1 * w2;
+    
+    // Use workspace element
+    let work = workspace[0];
+    
+    // Final output
+    let output = sigmoid(stage2 + work);
+    
+    return output;
+}

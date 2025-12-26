@@ -125,6 +125,27 @@ fn lower_statements_shared(
                 run_optimize_loop(graph, variables, cond_id, objective, target, lr, iters)?;
                 *last_node = Some(objective);
             }
+            noma_compiler::Statement::Alloc { name, shape } => {
+                // Evaluate shape dimensions at lowering time
+                let mut dims = Vec::new();
+                for dim_expr in shape {
+                    let dim_id = graph.build_from_expression_with_functions(dim_expr, variables, func_registry)?;
+                    graph.forward_pass()?;
+                    let dim_val = graph.get_node(dim_id)
+                        .and_then(|n| n.value.clone())
+                        .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s as usize), _ => None })
+                        .ok_or_else(|| format!("Alloc dimension must be a scalar for '{}'", name))?;
+                    dims.push(dim_val);
+                }
+                let node_id = graph.add_heap_tensor(name.clone(), dims)?;
+                variables.insert(name.clone(), node_id);
+                *last_node = Some(node_id);
+            }
+            noma_compiler::Statement::Free { name } => {
+                graph.free_heap_tensor(name)?;
+                variables.remove(name);
+                // free doesn't change last_node
+            }
         }
     }
     Ok(())

@@ -102,6 +102,17 @@ pub enum Statement {
     },
     /// Block of statements
     Block(Vec<Statement>),
+    /// Dynamic allocation: alloc name = tensor_shape;
+    /// Creates a heap-allocated tensor with the given shape
+    Alloc {
+        name: String,
+        shape: Vec<Expression>,
+    },
+    /// Deallocation: free name;
+    /// Frees a heap-allocated tensor
+    Free {
+        name: String,
+    },
 }
 
 /// Function definition

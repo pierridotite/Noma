@@ -215,6 +215,8 @@ impl Lexer {
             "minimize" => TokenType::Minimize,
             "gpu_struct" => TokenType::GpuStruct,
             "tensor" => TokenType::Tensor,
+            "alloc" => TokenType::Alloc,
+            "free" => TokenType::Free,
             _ => TokenType::Identifier(word),
         }
     }

@@ -280,6 +280,20 @@ impl LLVMCodegen {
                         }
                     }
                 }
+                NodeType::HeapTensor(name) => {
+                    // For LLVM codegen, heap tensors are currently evaluated at lowering time
+                    // and their values are embedded like constants. Full heap allocation
+                    // would require generating malloc/free calls.
+                    let val = match node.value.clone() {
+                        Some(Value::Scalar(v)) => v,
+                        Some(Value::Tensor(_)) => return Err(format!("HeapTensor '{}': tensor values not yet supported in LLVM codegen", name)),
+                        None => 0.0,
+                    };
+                    ir.push_str(&format!("  {} = fadd double {}, 0.0\n", var, self.fmt_f64(val)));
+                }
+                NodeType::FreedTensor(name) => {
+                    return Err(format!("Cannot generate code for freed tensor '{}'", name));
+                }
             }
         }
 

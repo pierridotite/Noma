@@ -1,0 +1,28 @@
+// Example: Dynamic Memory Allocation
+// Demonstrates alloc for heap-based tensor creation
+
+fn main() {
+    // Allocate a 2D tensor dynamically at runtime
+    // alloc creates a heap-allocated tensor filled with zeros
+    alloc buffer = [3, 3];
+    
+    // Access and use the allocated tensor (3x3 matrix of zeros)
+    let element = buffer[1][1];
+    
+    // Allocate with computed dimensions
+    let rows = 2.0;
+    let cols = 4.0;
+    alloc matrix = [rows, cols];  // 2x4 matrix
+    
+    // Use the tensor in computations
+    let val = matrix[0][3];
+    
+    // Allocate a 1D vector
+    alloc vec = [5];
+    let v0 = vec[2];
+    
+    // All allocated tensors start with zeros
+    let result = element + val + v0;
+    
+    return result;  // Should return 0.0
+}

@@ -160,6 +160,10 @@ pub enum NodeType {
     BinaryOp(String),
     UnaryOp(String),
     FunctionCall(String),
+    /// Heap-allocated tensor with dynamic shape
+    HeapTensor(String),
+    /// Reference to a freed tensor (for tracking)
+    FreedTensor(String),
 }
 
 #[derive(Debug, Clone)]
@@ -167,6 +171,8 @@ pub struct ComputationalGraph {
     nodes: HashMap<NodeId, Node>,
     next_id: usize,
     learnables: Vec<String>,
+    /// Track heap-allocated tensors for memory management
+    heap_allocations: HashMap<String, NodeId>,
 }
 
 impl ComputationalGraph {
@@ -175,6 +181,7 @@ impl ComputationalGraph {
             nodes: HashMap::new(),
             next_id: 0,
             learnables: Vec::new(),
+            heap_allocations: HashMap::new(),
         }
     }
 
@@ -310,6 +317,54 @@ impl ComputationalGraph {
 
         self.nodes.insert(id, node);
         id
+    }
+
+    /// Allocate a heap tensor with the given shape (dimensions as NodeIds)
+    pub fn add_heap_tensor(&mut self, name: String, shape: Vec<usize>) -> Result<NodeId, String> {
+        let id = NodeId::new(self.next_id);
+        self.next_id += 1;
+
+        // Create tensor filled with zeros
+        let size: usize = shape.iter().product();
+        let tensor = Tensor::new(vec![0.0; size], shape)?;
+        let grad = Value::Tensor(Tensor::zeros(tensor.shape.clone()));
+
+        let node = Node {
+            id,
+            node_type: NodeType::HeapTensor(name.clone()),
+            inputs: Vec::new(),
+            value: Some(Value::Tensor(tensor)),
+            gradient: Some(grad),
+        };
+
+        self.nodes.insert(id, node);
+        self.heap_allocations.insert(name, id);
+        Ok(id)
+    }
+
+    /// Free a heap-allocated tensor
+    pub fn free_heap_tensor(&mut self, name: &str) -> Result<(), String> {
+        if let Some(node_id) = self.heap_allocations.remove(name) {
+            // Mark the node as freed (we keep it for graph integrity but clear the data)
+            if let Some(node) = self.nodes.get_mut(&node_id) {
+                node.node_type = NodeType::FreedTensor(name.to_string());
+                node.value = None;
+                node.gradient = None;
+            }
+            Ok(())
+        } else {
+            Err(format!("Cannot free '{}': not a heap-allocated tensor", name))
+        }
+    }
+
+    /// Check if a tensor is still allocated (not freed)
+    pub fn is_heap_allocated(&self, name: &str) -> bool {
+        self.heap_allocations.contains_key(name)
+    }
+
+    /// Get the node ID for a heap-allocated tensor
+    pub fn get_heap_tensor(&self, name: &str) -> Option<NodeId> {
+        self.heap_allocations.get(name).copied()
     }
 
     pub fn build_from_expression(&mut self, expr: &Expression, variables: &HashMap<String, NodeId>) -> Result<NodeId, String> {
@@ -498,6 +553,27 @@ impl ComputationalGraph {
                 }
                 Statement::OptimizeLoop { .. } => {
                     return Err("OptimizeLoop not supported inside user functions".to_string());
+                }
+                Statement::Alloc { name, shape } => {
+                    // Evaluate shape dimensions at lowering time
+                    let mut dims = Vec::new();
+                    for dim_expr in shape {
+                        let dim_id = self.build_from_expression_with_functions(dim_expr, variables, functions)?;
+                        self.forward_pass()?;
+                        let dim_val = self.get_node(dim_id)
+                            .and_then(|n| n.value.clone())
+                            .and_then(|v| match v { Value::Scalar(s) => Some(s as usize), _ => None })
+                            .ok_or_else(|| format!("Alloc dimension must be a scalar for '{}'", name))?;
+                        dims.push(dim_val);
+                    }
+                    let node_id = self.add_heap_tensor(name.clone(), dims)?;
+                    variables.insert(name.clone(), node_id);
+                    last_node = Some(node_id);
+                }
+                Statement::Free { name } => {
+                    self.free_heap_tensor(name)?;
+                    variables.remove(name);
+                    // free doesn't produce a value, but we keep last_node unchanged
                 }
             }
         }
@@ -844,6 +920,14 @@ impl ComputationalGraph {
                         }
                         _ => {}
                     },
+                    NodeType::HeapTensor(_) => {
+                        // HeapTensor already has its value set during allocation
+                        // Nothing to do in forward pass
+                    }
+                    NodeType::FreedTensor(_) => {
+                        // FreedTensor nodes are skipped in forward pass
+                        // They have no value - just continue to next node
+                    }
                 }
             }
         }
@@ -1318,6 +1402,13 @@ impl ComputationalGraph {
                                 _ => {}
                             }
                         }
+                    }
+                    NodeType::HeapTensor(_) => {
+                        // HeapTensors accumulate gradients like Learnables
+                        // Nothing special needed here - gradient is already set
+                    }
+                    NodeType::FreedTensor(name) => {
+                        return Err(format!("Cannot compute gradient for freed tensor '{}'", name));
                     }
                 }
             }

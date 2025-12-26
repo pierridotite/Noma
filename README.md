@@ -206,6 +206,31 @@ let y = matmul(X, W);          // (n×k) @ (k×m) → (n×m)
 let data = tensor [[-0.5], [1.0], [-2.5]];   // Negative literals supported
 ```
 
+### Dynamic Memory Allocation
+
+Allocate tensors with dynamic shapes at runtime:
+
+```noma
+// Allocate a 2D tensor (filled with zeros)
+alloc buffer = [3, 3];
+
+// Use computed dimensions
+let rows = 4.0;
+let cols = 8.0;
+alloc workspace = [rows, cols];
+
+// Access elements like any tensor
+let element = buffer[1][2];
+
+// Free when no longer needed
+free buffer;
+```
+
+Dynamic allocation enables:
+- **Heap-based network growth**: Create layers with sizes determined at runtime
+- **Workspace management**: Allocate scratch space for computations
+- **Memory efficiency**: Free tensors when no longer needed
+
 ---
 
 ## Examples
@@ -245,6 +270,13 @@ let data = tensor [[-0.5], [1.0], [-2.5]];   // Negative literals supported
 |---------|-------------|---------|
 | `15_user_functions.noma` | Function definitions | Defining and calling functions |
 | `16_user_functions_optim.noma` | Functions with optimization | Autodiff through user functions |
+
+### Dynamic Allocation
+
+| Example | Description | Concept |
+|---------|-------------|---------|
+| `17_dynamic_alloc.noma` | Heap tensor allocation | alloc with dynamic shapes |
+| `18_dynamic_network.noma` | Dynamic workspace | Network with allocated buffers |
 
 ### Linear Regression Example
 
@@ -447,6 +479,7 @@ Syntax highlighting is available for `.noma` files. See the [`noma-vscode`](./no
 - ✅ Core math stdlib (sin, cos, tanh, exp, log, sqrt, abs, floor, ceil; f64; autodiff except floor/ceil)
 - ✅ Control flow (if/else, while; executed at compile-time lowering)
 - ✅ User-defined functions (inlined at compile-time, full autodiff support)
+- ✅ Dynamic allocation (`alloc`/`free` keywords for heap-based tensor management)
 
 ### Known limitations (current gaps)
 
@@ -458,7 +491,6 @@ Syntax highlighting is available for `.noma` files. See the [`noma-vscode`](./no
 - Control flow is evaluated at lowering: non-taken branches are not compiled; `while` expands the graph (unrolling)
 - No autodiff through `floor`/`ceil` or external calls
 - **Single data type**: only `f64`; no integers, strings, or booleans as first-class types
-- **Static Tensor Shapes**: Dimensions must be known at compile-time (current workaround for dynamic topology: use the "Capacity Reserve" pattern with masks)
 - **Struct definitions** are parsed but have no runtime semantics yet
 - **No error recovery** in parser; first syntax error aborts compilation
 - **No module/import system**: everything must be in a single file
@@ -468,7 +500,6 @@ Syntax highlighting is available for `.noma` files. See the [`noma-vscode`](./no
 
 ### Planned
 
-- 🔲 **True Dynamic Topology**: Native `alloc`/`free` keywords for heap-based network growth
 - 🔲 **Standard Library**: Random Number Generation (RNG) for weight initialization
 - 🔲 Adam/RMSprop optimizers
 - 🔲 Batch processing & File I/O (CSV/Safetensors)

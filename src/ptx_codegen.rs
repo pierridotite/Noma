@@ -214,6 +214,13 @@ impl PTXCodegen {
                         _ => return Err(format!("Unsupported function in PTX backend: {}", name)),
                     }
                 }
+                NodeType::HeapTensor(name) => {
+                    // HeapTensors are not supported in PTX codegen (GPU)
+                    return Err(format!("HeapTensor '{}' not supported in PTX codegen", name));
+                }
+                NodeType::FreedTensor(name) => {
+                    return Err(format!("Cannot generate PTX for freed tensor '{}'", name));
+                }
             }
         }
 

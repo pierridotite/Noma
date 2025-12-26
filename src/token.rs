@@ -18,6 +18,8 @@ pub enum TokenType {
     Until,       // until
     Minimize,    // minimize
     GpuStruct,   // gpu_struct
+    Alloc,       // alloc
+    Free,        // free
     
     // Types
     Tensor,      // tensor
@@ -94,6 +96,8 @@ impl fmt::Display for TokenType {
             TokenType::Until => write!(f, "until"),
             TokenType::Minimize => write!(f, "minimize"),
             TokenType::GpuStruct => write!(f, "gpu_struct"),
+            TokenType::Alloc => write!(f, "alloc"),
+            TokenType::Free => write!(f, "free"),
             TokenType::Tensor => write!(f, "tensor"),
             TokenType::Identifier(name) => write!(f, "identifier({})", name),
             TokenType::Number(n) => write!(f, "number({})", n),
