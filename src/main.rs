@@ -84,6 +84,14 @@ enum Commands {
         /// Enable fast-math optimizations
         #[arg(long = "fast-math")]
         fast_math: bool,
+
+        /// Additional libraries to link (passed as -l<name>)
+        #[arg(long = "link-lib", value_name = "LIB", num_args = 1.., action = clap::ArgAction::Append)]
+        link_libs: Vec<String>,
+
+        /// Additional library search paths (passed as -L<path>)
+        #[arg(long = "link-path", value_name = "PATH", num_args = 1.., action = clap::ArgAction::Append)]
+        link_paths: Vec<String>,
     },
 
     /// Compile NOMA to PTX (placeholder backend)
@@ -155,8 +163,8 @@ fn main() -> anyhow::Result<()> {
             Commands::Compile { file, output, optimize, opt_level, emit_asm, emit_obj, fast_math } => {
                 compile_to_llvm(file, output, optimize, opt_level, emit_asm, emit_obj, fast_math)?;
         }
-        Commands::BuildExe { file, output, opt_level, fast_math } => {
-            build_executable(file, output, opt_level, fast_math)?;
+        Commands::BuildExe { file, output, opt_level, fast_math, link_libs, link_paths } => {
+            build_executable(file, output, opt_level, fast_math, link_libs, link_paths)?;
         }
         Commands::CompilePtx { file, output, n_elems, host_stub, optimize, fast_math } => {
             compile_to_ptx(file, output, n_elems, host_stub, optimize, fast_math)?;
@@ -482,6 +490,33 @@ fn compile_to_llvm(file: PathBuf, output: Option<PathBuf>, optimize: bool, opt_l
                 noma_compiler::Statement::Block(inner) => {
                     lower_statements(graph, variables, inner, last_node)?;
                 }
+                noma_compiler::Statement::If { condition, then_branch, else_branch } => {
+                    // Evaluate condition and lower only the taken branch
+                    let cond_id = graph.build_from_expression(condition, variables)?;
+                    let _ = graph.forward_pass();
+                    let cond_val = graph.get_node(cond_id)
+                        .and_then(|n| n.value.clone())
+                        .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
+                        .unwrap_or(0.0);
+                    if cond_val != 0.0 {
+                        lower_statements(graph, variables, then_branch, last_node)?;
+                    } else {
+                        lower_statements(graph, variables, else_branch, last_node)?;
+                    }
+                }
+                noma_compiler::Statement::While { condition, body } => {
+                    // Imperative while executed at compile-time lowering; guards to avoid infinite loops.
+                    for _ in 0..1_000_000usize {
+                        let cond_id = graph.build_from_expression(condition, variables)?;
+                        let _ = graph.forward_pass();
+                        let cond_val = graph.get_node(cond_id)
+                            .and_then(|n| n.value.clone())
+                            .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
+                            .unwrap_or(0.0);
+                        if cond_val == 0.0 { break; }
+                        lower_statements(graph, variables, body, last_node)?;
+                    }
+                }
                 noma_compiler::Statement::OptimizeLoop { target, condition, body, .. } => {
                     // Lower body first so condition can reference values like `loss`
                     let mut loop_last: Option<noma_compiler::NodeId> = None;
@@ -701,6 +736,31 @@ fn run_noma(file: PathBuf) -> anyhow::Result<()> {
                 noma_compiler::Statement::Block(inner) => {
                     lower_statements(graph, variables, inner, last_node)?;
                 }
+                noma_compiler::Statement::If { condition, then_branch, else_branch } => {
+                    let cond_id = graph.build_from_expression(condition, variables)?;
+                    let _ = graph.forward_pass();
+                    let cond_val = graph.get_node(cond_id)
+                        .and_then(|n| n.value.clone())
+                        .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
+                        .unwrap_or(0.0);
+                    if cond_val != 0.0 {
+                        lower_statements(graph, variables, then_branch, last_node)?;
+                    } else {
+                        lower_statements(graph, variables, else_branch, last_node)?;
+                    }
+                }
+                noma_compiler::Statement::While { condition, body } => {
+                    for _ in 0..1_000_000usize {
+                        let cond_id = graph.build_from_expression(condition, variables)?;
+                        let _ = graph.forward_pass();
+                        let cond_val = graph.get_node(cond_id)
+                            .and_then(|n| n.value.clone())
+                            .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
+                            .unwrap_or(0.0);
+                        if cond_val == 0.0 { break; }
+                        lower_statements(graph, variables, body, last_node)?;
+                    }
+                }
                 noma_compiler::Statement::OptimizeLoop { target, condition, body, .. } => {
                     // Lower body then build condition to allow referencing loss
                     let mut loop_last: Option<noma_compiler::NodeId> = None;
@@ -812,6 +872,31 @@ fn compile_to_ptx(file: PathBuf, output: Option<PathBuf>, n_elems: Option<u32>, 
                 noma_compiler::Statement::Block(inner) => {
                     lower_statements(graph, variables, inner, last_node)?;
                 }
+                noma_compiler::Statement::If { condition, then_branch, else_branch } => {
+                    let cond_id = graph.build_from_expression(condition, variables)?;
+                    let _ = graph.forward_pass();
+                    let cond_val = graph.get_node(cond_id)
+                        .and_then(|n| n.value.clone())
+                        .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
+                        .unwrap_or(0.0);
+                    if cond_val != 0.0 {
+                        lower_statements(graph, variables, then_branch, last_node)?;
+                    } else {
+                        lower_statements(graph, variables, else_branch, last_node)?;
+                    }
+                }
+                noma_compiler::Statement::While { condition, body } => {
+                    for _ in 0..1_000_000usize {
+                        let cond_id = graph.build_from_expression(condition, variables)?;
+                        let _ = graph.forward_pass();
+                        let cond_val = graph.get_node(cond_id)
+                            .and_then(|n| n.value.clone())
+                            .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
+                            .unwrap_or(0.0);
+                        if cond_val == 0.0 { break; }
+                        lower_statements(graph, variables, body, last_node)?;
+                    }
+                }
                 noma_compiler::Statement::OptimizeLoop { target, condition, body, .. } => {
                     // Lower body first so condition can use variables like `loss`
                     let mut loop_last: Option<noma_compiler::NodeId> = None;
@@ -873,7 +958,7 @@ fn compile_to_ptx(file: PathBuf, output: Option<PathBuf>, n_elems: Option<u32>, 
 }
 // Add before the final closing brace of main.rs
 
-fn build_executable(file: PathBuf, output: PathBuf, opt_level: Option<u8>, fast_math: bool) -> anyhow::Result<()> {
+fn build_executable(file: PathBuf, output: PathBuf, opt_level: Option<u8>, fast_math: bool, link_libs: Vec<String>, link_paths: Vec<String>) -> anyhow::Result<()> {
     println!("Building executable: {} -> {}", file.display(), output.display());
     
     // Read source file
@@ -956,6 +1041,31 @@ fn build_executable(file: PathBuf, output: PathBuf, opt_level: Option<u8>, fast_
                 }
                 noma_compiler::Statement::Block(inner) => {
                     lower_statements(graph, variables, inner, last_node)?;
+                }
+                noma_compiler::Statement::If { condition, then_branch, else_branch } => {
+                    let cond_id = graph.build_from_expression(condition, variables)?;
+                    let _ = graph.forward_pass();
+                    let cond_val = graph.get_node(cond_id)
+                        .and_then(|n| n.value.clone())
+                        .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
+                        .unwrap_or(0.0);
+                    if cond_val != 0.0 {
+                        lower_statements(graph, variables, then_branch, last_node)?;
+                    } else {
+                        lower_statements(graph, variables, else_branch, last_node)?;
+                    }
+                }
+                noma_compiler::Statement::While { condition, body } => {
+                    for _ in 0..1_000_000usize {
+                        let cond_id = graph.build_from_expression(condition, variables)?;
+                        let _ = graph.forward_pass();
+                        let cond_val = graph.get_node(cond_id)
+                            .and_then(|n| n.value.clone())
+                            .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
+                            .unwrap_or(0.0);
+                        if cond_val == 0.0 { break; }
+                        lower_statements(graph, variables, body, last_node)?;
+                    }
                 }
                 noma_compiler::Statement::OptimizeLoop { target, condition, body, .. } => {
                     // Lower the body first - this creates the nodes
@@ -1065,14 +1175,27 @@ fn build_executable(file: PathBuf, output: PathBuf, opt_level: Option<u8>, fast_
     let mut link_success = false;
 
     for linker in &linkers {
-        match Command::new(linker)
-            .arg(&obj_path)
-            .arg("-lm")  // Link math library
-            .arg("-no-pie")  // Avoid PIE relocation issues
-            .arg("-o")
-            .arg(&output)
-            .status()
-        {
+        let mut cmd = Command::new(linker);
+        cmd.arg(&obj_path);
+
+        // Library search paths
+        for p in &link_paths {
+            cmd.arg(format!("-L{}", p));
+        }
+
+        // Math library by default
+        cmd.arg("-lm");
+
+        // User-specified libraries
+        for lib in &link_libs {
+            cmd.arg(format!("-l{}", lib));
+        }
+
+        cmd.arg("-no-pie");
+        cmd.arg("-o");
+        cmd.arg(&output);
+
+        match cmd.status() {
             Ok(s) if s.success() => {
                 println!("[info] Linked executable with {}", linker);
                 println!("✅ Built standalone executable: {}", output.display());

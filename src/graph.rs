@@ -585,6 +585,60 @@ impl ComputationalGraph {
                             };
                             if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(result); }
                         }
+                        "sin" => {
+                            if inputs.len() != 1 { return Err("sin expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.sin())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
+                        "cos" => {
+                            if inputs.len() != 1 { return Err("cos expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.cos())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
+                        "tanh" => {
+                            if inputs.len() != 1 { return Err("tanh expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.tanh())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
+                        "exp" => {
+                            if inputs.len() != 1 { return Err("exp expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.exp())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
+                        "log" => {
+                            if inputs.len() != 1 { return Err("log expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.ln())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
+                        "sqrt" => {
+                            if inputs.len() != 1 { return Err("sqrt expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.sqrt())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
+                        "abs" => {
+                            if inputs.len() != 1 { return Err("abs expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.abs())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
+                        "floor" => {
+                            if inputs.len() != 1 { return Err("floor expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.floor())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
+                        "ceil" => {
+                            if inputs.len() != 1 { return Err("ceil expects 1 argument".to_string()); }
+                            let v = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing argument")?;
+                            let res = v.map_unary(|x| x.ceil())?;
+                            if let Some(node) = self.nodes.get_mut(&node_id) { node.value = Some(res); }
+                        }
                         "index" => {
                             if inputs.len() < 2 { return Err("index expects at least target and one index".to_string()); }
                             let target_val = self.nodes.get(&inputs[0]).and_then(|n| n.value.clone()).ok_or("Missing target")?;
@@ -829,6 +883,139 @@ impl ComputationalGraph {
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                                "sin" => {
+                                    if let Some(v) = val {
+                                        let local = match v {
+                                            Value::Scalar(x) => Value::Scalar(gradient.as_scalar().ok_or("Expected scalar gradient for sin")? * x.cos()),
+                                            Value::Tensor(t) => match gradient.clone() {
+                                                Value::Tensor(g) => {
+                                                    if g.shape != t.shape { return Err("sin tensor gradient shape mismatch".to_string()); }
+                                                    Value::Tensor(Tensor { data: g.data.iter().zip(t.data.iter()).map(|(g,x)| g * x.cos()).collect(), shape: t.shape })
+                                                }
+                                                Value::Scalar(s) => Value::Tensor(Tensor { data: t.data.iter().map(|x| s * x.cos()).collect(), shape: t.shape }),
+                                            },
+                                        };
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) { node.gradient = Some(add_grad(node.gradient.clone(), local)?); }
+                                    }
+                                }
+                                "cos" => {
+                                    if let Some(v) = val {
+                                        let local = match v {
+                                            Value::Scalar(x) => Value::Scalar(gradient.as_scalar().ok_or("Expected scalar gradient for cos")? * -x.sin()),
+                                            Value::Tensor(t) => match gradient.clone() {
+                                                Value::Tensor(g) => {
+                                                    if g.shape != t.shape { return Err("cos tensor gradient shape mismatch".to_string()); }
+                                                    Value::Tensor(Tensor { data: g.data.iter().zip(t.data.iter()).map(|(g,x)| g * -x.sin()).collect(), shape: t.shape })
+                                                }
+                                                Value::Scalar(s) => Value::Tensor(Tensor { data: t.data.iter().map(|x| s * -x.sin()).collect(), shape: t.shape }),
+                                            },
+                                        };
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) { node.gradient = Some(add_grad(node.gradient.clone(), local)?); }
+                                    }
+                                }
+                                "tanh" => {
+                                    if let Some(v) = val {
+                                        let local = match v {
+                                            Value::Scalar(x) => {
+                                                let th = x.tanh();
+                                                Value::Scalar(gradient.as_scalar().ok_or("Expected scalar gradient for tanh")? * (1.0 - th * th))
+                                            }
+                                            Value::Tensor(t) => match gradient.clone() {
+                                                Value::Tensor(g) => {
+                                                    if g.shape != t.shape { return Err("tanh tensor gradient shape mismatch".to_string()); }
+                                                    Value::Tensor(Tensor { data: g.data.iter().zip(t.data.iter()).map(|(g,x)| {
+                                                        let th = x.tanh();
+                                                        g * (1.0 - th * th)
+                                                    }).collect(), shape: t.shape })
+                                                }
+                                                Value::Scalar(s) => Value::Tensor(Tensor { data: t.data.iter().map(|x| {
+                                                    let th = x.tanh();
+                                                    s * (1.0 - th * th)
+                                                }).collect(), shape: t.shape }),
+                                            },
+                                        };
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) { node.gradient = Some(add_grad(node.gradient.clone(), local)?); }
+                                    }
+                                }
+                                "exp" => {
+                                    if let Some(v) = val {
+                                        let local = match v {
+                                            Value::Scalar(x) => Value::Scalar(gradient.as_scalar().ok_or("Expected scalar gradient for exp")? * x.exp()),
+                                            Value::Tensor(t) => match gradient.clone() {
+                                                Value::Tensor(g) => {
+                                                    if g.shape != t.shape { return Err("exp tensor gradient shape mismatch".to_string()); }
+                                                    Value::Tensor(Tensor { data: g.data.iter().zip(t.data.iter()).map(|(g,x)| g * x.exp()).collect(), shape: t.shape })
+                                                }
+                                                Value::Scalar(s) => Value::Tensor(Tensor { data: t.data.iter().map(|x| s * x.exp()).collect(), shape: t.shape }),
+                                            },
+                                        };
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) { node.gradient = Some(add_grad(node.gradient.clone(), local)?); }
+                                    }
+                                }
+                                "log" => {
+                                    if let Some(v) = val {
+                                        let local = match v {
+                                            Value::Scalar(x) => Value::Scalar(gradient.as_scalar().ok_or("Expected scalar gradient for log")? * (1.0 / x)),
+                                            Value::Tensor(t) => match gradient.clone() {
+                                                Value::Tensor(g) => {
+                                                    if g.shape != t.shape { return Err("log tensor gradient shape mismatch".to_string()); }
+                                                    Value::Tensor(Tensor { data: g.data.iter().zip(t.data.iter()).map(|(g,x)| g * (1.0 / x)).collect(), shape: t.shape })
+                                                }
+                                                Value::Scalar(s) => Value::Tensor(Tensor { data: t.data.iter().map(|x| s * (1.0 / x)).collect(), shape: t.shape }),
+                                            },
+                                        };
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) { node.gradient = Some(add_grad(node.gradient.clone(), local)?); }
+                                    }
+                                }
+                                "sqrt" => {
+                                    if let Some(v) = val {
+                                        let local = match v {
+                                            Value::Scalar(x) => Value::Scalar(gradient.as_scalar().ok_or("Expected scalar gradient for sqrt")? * (0.5 / x.sqrt())),
+                                            Value::Tensor(t) => match gradient.clone() {
+                                                Value::Tensor(g) => {
+                                                    if g.shape != t.shape { return Err("sqrt tensor gradient shape mismatch".to_string()); }
+                                                    Value::Tensor(Tensor { data: g.data.iter().zip(t.data.iter()).map(|(g,x)| g * (0.5 / x.sqrt())).collect(), shape: t.shape })
+                                                }
+                                                Value::Scalar(s) => Value::Tensor(Tensor { data: t.data.iter().map(|x| s * (0.5 / x.sqrt())).collect(), shape: t.shape }),
+                                            },
+                                        };
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) { node.gradient = Some(add_grad(node.gradient.clone(), local)?); }
+                                    }
+                                }
+                                "abs" => {
+                                    if let Some(v) = val {
+                                        let local = match v {
+                                            Value::Scalar(x) => {
+                                                let sign = if x > 0.0 { 1.0 } else if x < 0.0 { -1.0 } else { 0.0 };
+                                                Value::Scalar(gradient.as_scalar().ok_or("Expected scalar gradient for abs")? * sign)
+                                            }
+                                            Value::Tensor(t) => match gradient.clone() {
+                                                Value::Tensor(g) => {
+                                                    if g.shape != t.shape { return Err("abs tensor gradient shape mismatch".to_string()); }
+                                                    Value::Tensor(Tensor { data: g.data.iter().zip(t.data.iter()).map(|(g,x)| {
+                                                        let sign = if *x > 0.0 { 1.0 } else if *x < 0.0 { -1.0 } else { 0.0 };
+                                                        g * sign
+                                                    }).collect(), shape: t.shape })
+                                                }
+                                                Value::Scalar(s) => Value::Tensor(Tensor { data: t.data.iter().map(|x| {
+                                                    let sign = if *x > 0.0 { 1.0 } else if *x < 0.0 { -1.0 } else { 0.0 };
+                                                    s * sign
+                                                }).collect(), shape: t.shape }),
+                                            },
+                                        };
+                                        if let Some(node) = self.nodes.get_mut(&inputs[0]) { node.gradient = Some(add_grad(node.gradient.clone(), local)?); }
+                                    }
+                                }
+                                "floor" | "ceil" => {
+                                    let zero = match val {
+                                        Some(Value::Scalar(_)) => Value::Scalar(0.0),
+                                        Some(Value::Tensor(t)) => Value::Tensor(Tensor::zeros(t.shape.clone())),
+                                        _ => gradient.clone().zeros_like(),
+                                    };
+                                    if let Some(node) = self.nodes.get_mut(&inputs[0]) {
+                                        node.gradient = Some(add_grad(node.gradient.clone(), zero)?);
                                     }
                                 }
                                 "print" => {

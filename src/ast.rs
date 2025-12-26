@@ -89,6 +89,17 @@ pub enum Statement {
     Expression(Expression),
     /// Return statement
     Return(Option<Expression>),
+    /// If-else control flow
+    If {
+        condition: Expression,
+        then_branch: Vec<Statement>,
+        else_branch: Vec<Statement>,
+    },
+    /// While loop
+    While {
+        condition: Expression,
+        body: Vec<Statement>,
+    },
     /// Block of statements
     Block(Vec<Statement>),
 }

@@ -191,6 +191,8 @@ impl Parser {
             TokenType::Let => self.parse_let_declaration(),
             TokenType::Optimize => self.parse_optimize_loop(),
             TokenType::Minimize => self.parse_minimize(),
+            TokenType::If => self.parse_if_statement(),
+            TokenType::While => self.parse_while_statement(),
             TokenType::Return => self.parse_return(),
             _ => {
                 // Handle assignment: identifier '=' expr;
@@ -203,6 +205,32 @@ impl Parser {
                 }
             }
         }
+    }
+
+    /// Parse an if/else statement
+    fn parse_if_statement(&mut self) -> Result<Statement, NomaError> {
+        self.consume(TokenType::If, "Expected 'if'")?;
+        let condition = self.parse_expression()?;
+        self.consume(TokenType::LBrace, "Expected '{' after if condition")?;
+        let then_branch = self.parse_block()?;
+
+        let mut else_branch = Vec::new();
+        if matches!(self.peek().token_type, TokenType::Else) {
+            self.advance();
+            self.consume(TokenType::LBrace, "Expected '{' after else")?;
+            else_branch = self.parse_block()?;
+        }
+
+        Ok(Statement::If { condition, then_branch, else_branch })
+    }
+
+    /// Parse a while loop: while <cond> { body }
+    fn parse_while_statement(&mut self) -> Result<Statement, NomaError> {
+        self.consume(TokenType::While, "Expected 'while'")?;
+        let condition = self.parse_expression()?;
+        self.consume(TokenType::LBrace, "Expected '{' after while condition")?;
+        let body = self.parse_block()?;
+        Ok(Statement::While { condition, body })
     }
 
     /// Parse 'learn' declaration

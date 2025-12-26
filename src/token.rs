@@ -11,6 +11,9 @@ pub enum TokenType {
     Mut,         // mut
     Struct,      // struct
     Return,      // return
+    If,          // if
+    Else,        // else
+    While,       // while
     Optimize,    // optimize
     Until,       // until
     Minimize,    // minimize

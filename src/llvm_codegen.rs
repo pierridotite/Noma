@@ -1,16 +1,17 @@
 use crate::graph::{ComputationalGraph, NodeId, NodeType, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 /// LLVM IR code generator
 /// Converts a computational graph to LLVM Intermediate Representation
 pub struct LLVMCodegen {
     counter: usize,
     fast_math: bool,
+    extern_decls: BTreeSet<(String, usize)>,
 }
 
 impl LLVMCodegen {
     pub fn new() -> Self {
-        Self { counter: 0, fast_math: false }
+        Self { counter: 0, fast_math: false, extern_decls: BTreeSet::new() }
     }
 
     pub fn with_fast_math(mut self, enabled: bool) -> Self {
@@ -39,6 +40,7 @@ impl LLVMCodegen {
     }
     
     fn generate_internal(&mut self, graph: &ComputationalGraph, return_node: Option<NodeId>) -> Result<String, String> {
+        self.extern_decls.clear();
         let mut ir = String::new();
 
         // LLVM module header
@@ -227,8 +229,54 @@ impl LLVMCodegen {
                             let arg_var = var_map.get(&node.inputs[0]).ok_or("Argument not found")?;
                             ir.push_str(&format!("  {} = call double @llvm.maxnum.f64(double {}, double 0.0)\n", var, arg_var));
                         }
+                        "sin" | "cos" | "exp" | "log" | "sqrt" | "tanh" => {
+                            if node.inputs.len() != 1 {
+                                return Err(format!("{} expects 1 argument", func_name));
+                            }
+                            let arg_var = var_map.get(&node.inputs[0]).ok_or("Argument not found")?;
+                            let intrinsic = match func_name.as_str() {
+                                "sin" => "llvm.sin.f64",
+                                "cos" => "llvm.cos.f64",
+                                "exp" => "llvm.exp.f64",
+                                "log" => "llvm.log.f64",
+                                "sqrt" => "llvm.sqrt.f64",
+                                "tanh" => "llvm.tanh.f64",
+                                _ => unreachable!(),
+                            };
+                            ir.push_str(&format!("  {} = call double @{}(double {})\n", var, intrinsic, arg_var));
+                        }
+                        "abs" => {
+                            if node.inputs.len() != 1 { return Err("abs expects 1 argument".to_string()); }
+                            let arg_var = var_map.get(&node.inputs[0]).ok_or("Argument not found")?;
+                            let neg = self.fresh_var();
+                            ir.push_str(&format!("  {} = fsub double 0.0, {}\n", neg, arg_var));
+                            ir.push_str(&format!("  {} = call double @llvm.maxnum.f64(double {}, double {})\n", var, arg_var, neg));
+                        }
+                        "floor" => {
+                            if node.inputs.len() != 1 { return Err("floor expects 1 argument".to_string()); }
+                            let arg_var = var_map.get(&node.inputs[0]).ok_or("Argument not found")?;
+                            ir.push_str(&format!("  {} = call double @llvm.floor.f64(double {})\n", var, arg_var));
+                        }
+                        "ceil" => {
+                            if node.inputs.len() != 1 { return Err("ceil expects 1 argument".to_string()); }
+                            let arg_var = var_map.get(&node.inputs[0]).ok_or("Argument not found")?;
+                            ir.push_str(&format!("  {} = call double @llvm.ceil.f64(double {})\n", var, arg_var));
+                        }
                         _ => {
-                            return Err(format!("Unsupported function: {}", func_name));
+                            // Treat unknown function calls as external C functions with double args/return.
+                            let mut arg_vars = Vec::new();
+                            for inp in &node.inputs {
+                                let av = var_map.get(inp).ok_or("Argument not found")?;
+                                arg_vars.push(av.clone());
+                            }
+                            let sig = (func_name.clone(), arg_vars.len());
+                            self.extern_decls.insert(sig);
+
+                            let params: Vec<String> = arg_vars.iter().map(|a| format!("double {}", a)).collect();
+                            let result_var = self.fresh_var();
+                            ir.push_str(&format!("  {} = call double @{}({})\n", result_var, func_name, params.join(", ")));
+                            var_map.insert(node_id, result_var.clone());
+                            last_var = Some(result_var);
                         }
                     }
                 }
@@ -254,6 +302,19 @@ impl LLVMCodegen {
         ir.push_str("declare double @llvm.pow.f64(double, double)\n");
         ir.push_str("declare double @llvm.exp.f64(double)\n");
         ir.push_str("declare double @llvm.maxnum.f64(double, double)\n");
+        ir.push_str("declare double @llvm.sin.f64(double)\n");
+        ir.push_str("declare double @llvm.cos.f64(double)\n");
+        ir.push_str("declare double @llvm.log.f64(double)\n");
+        ir.push_str("declare double @llvm.sqrt.f64(double)\n");
+        ir.push_str("declare double @llvm.tanh.f64(double)\n");
+        ir.push_str("declare double @llvm.floor.f64(double)\n");
+        ir.push_str("declare double @llvm.ceil.f64(double)\n");
+
+        // External function declarations (C ABI, double args/return)
+        for (name, arity) in &self.extern_decls {
+            let params: Vec<String> = (0..*arity).map(|_| "double".to_string()).collect();
+            ir.push_str(&format!("declare double @{}({})\n", name, params.join(", ")));
+        }
 
         Ok(ir)
     }

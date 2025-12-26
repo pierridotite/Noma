@@ -111,6 +111,15 @@ optimize(w) until loss < 0.001 {
 ```noma
 sigmoid(x)    // 1 / (1 + e^(-x))
 relu(x)       // max(0, x)
+sin(x)        // sine
+cos(x)        // cosine
+tanh(x)       // hyperbolic tangent
+exp(x)        // e^x
+log(x)        // natural log
+sqrt(x)       // square root
+abs(x)        // absolute value
+floor(x)      // floor
+ceil(x)       // ceil
 sum(tensor)   // Sum all elements → scalar
 mean(tensor)  // Average of all elements → scalar
 print(x)      // Print value (passes through for chaining)
@@ -253,6 +262,43 @@ cargo run -- build-exe <file.noma> -o output --fast-math
 cargo run -- build <file.noma> --ast --tokens --graph
 ```
 
+## GPU Execution (PTX/CUDA, experimental)
+
+1. Generate PTX from a NOMA program (elementwise kernels need `--n-elems`):
+
+```bash
+cargo run --release -- compile-ptx examples/10_tensor_ops.noma -o /tmp/compute.ptx --n-elems 1024
+```
+
+2. Launch the PTX on a CUDA GPU (build with the CUDA feature so the driver API is linked):
+
+```bash
+cargo run --release --features cuda -- run-ptx /tmp/compute.ptx --n-elems 1024
+```
+
+Notes:
+- Requires an NVIDIA driver plus the CUDA toolkit providing `libcuda` and a GPU that supports `sm_70` (Volta+) since the PTX header targets that ISA.
+- Backend is minimal and elementwise: supports add/sub/mul/div/mod/pow, relu, sigmoid, logical and/or, and unary negation on `f64`. Constants are embedded; variables/learnables are loaded from a packed buffer starting at `in_ptr` (the demo host fills ones by default). Use `--n-elems 1` for scalar kernels.
+- Add `--host-stub` to print the expected launch parameters when CUDA is unavailable; results are still emitted to stdout.
+
+## C Interop (experimental)
+
+- You can call external C functions that return `double` and take `double` arguments. Declarations are implicit: any unknown function name lowers to an external call in LLVM IR.
+- Example (calls `sin` from `libm`, linked by default in `build-exe`):
+
+```noma
+fn main() {
+    let x = 1.57079632679; // ~pi/2
+    let y = sin(x);        // external C symbol
+    return y;
+}
+```
+
+Limitations:
+- Scalar `double` args/return only; no tensors; no autodiff through external calls.
+- Works in compiled modes (`compile`, `build-exe`); interpreter (`run`) will not execute external code.
+- Link against extra libs with `build-exe --link-path <dir> --link-lib <name>` (translates to `-L<dir> -l<name>` in the linker invocation). Example: `--link-path /usr/local/lib --link-lib m`.
+
 ---
 
 ## Architecture
@@ -339,12 +385,13 @@ Syntax highlighting is available for `.noma` files. See the [`noma-vscode`](./no
 - ✅ Linear algebra (dot, matmul)
 - ✅ Interpreter mode (`run` command)
 - ✅ Variable hyperparameters
+- ✅ Experimental GPU execution (PTX/CUDA; feature-gated)
+- ✅ Experimental C interop (extern double-only calls; no autodiff)
+- ✅ Core math stdlib (sin, cos, tanh, exp, log, sqrt, abs, floor, ceil; f64; autodiff except floor/ceil)
+- ✅ Control flow (if/else, while; executed at compile-time lowering)
 
 ### Planned
 
-- 🔲 GPU execution (PTX/CUDA)
-- 🔲 Standard library
-- 🔲 Control flow (if/else, loops)
 - 🔲 User-defined functions
 - 🔲 Adam/RMSprop optimizers
 - 🔲 Batch processing
