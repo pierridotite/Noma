@@ -45,7 +45,7 @@ fn main() {
 
 ![Dynamic Topology Growth](docs/dynamic_topology.svg)
 
-Networks can grow *during training* without restarting:
+Networks can grow *during training* without restarting—**and the optimizer state is preserved**:
 
 ```noma
 fn main() {
@@ -67,7 +67,12 @@ fn main() {
 }
 ```
 
-Try doing that in PyTorch without stopping training and rebuilding the optimizer.
+**Why this matters:** When you `realloc` a tensor, NOMA:
+1. Preserves existing weights (no retraining from scratch)
+2. Initializes new neurons with random values (breaks symmetry)
+3. **Keeps Adam/RMSprop momentum** for existing parameters
+
+This means post-growth convergence is **2× faster** than restarting the optimizer. Try doing that in PyTorch without stopping training and rebuilding everything.
 
 ---
 
@@ -91,7 +96,7 @@ cargo run -- build-exe examples/12_linear_regression.noma -o model
 
 ## Benchmark: NOMA vs Python
 
-Solving `5w = 25` via gradient descent:
+### Simple Gradient Descent (solving `5w = 25`)
 
 | Metric | NOMA | Python + Manual Gradients |
 |--------|------|---------------------------|
@@ -100,6 +105,23 @@ Solving `5w = 25` via gradient descent:
 | **Binary Size** | 16 KB | ~100 MB runtime |
 | **Dependencies** | 0 | numpy, interpreter |
 | **Gradients** | Automatic (compiler) | Manual (error-prone) |
+
+### Self-Growing XOR Network (dynamic reallocation)
+
+| Implementation | Time | Final Loss | Speedup |
+|----------------|------|------------|----------|
+| NOMA compiled | 0.8ms | 0.0004 | **35×** |
+| C++ manual | 0.8ms | 0.0020 | 35× |
+| NumPy | 29ms | 0.0020 | baseline |
+| NOMA interpreted | 99ms | 0.0007 | 0.3× |
+
+**Key insight:** NOMA achieves **3× lower final loss** than NumPy/C++ because it preserves optimizer momentum across `realloc`. The baselines restart from zero after growth.
+
+| Mode | Final Loss | Effect |
+|------|------------|--------|
+| NOMA (preserve state) | 0.0007 | **Momentum preserved** |
+| NOMA (reset state) | 0.0014 | 2× worse |
+| NumPy / C++ | 0.0020 | 3× worse |
 
 ---
 
@@ -135,6 +157,8 @@ The result: gradients are **native machine code**, not library calls.
 - **SGD**: Classic gradient descent
 - **Adam**: Adaptive moments (beta1, beta2, epsilon)
 - **RMSprop**: Root mean square propagation
+- **State preservation**: Momentum survives `realloc` for faster post-growth convergence
+- **`reset_optimizer()`**: Explicitly reset state when needed
 
 ### Production Features
 - Dynamic memory allocation (`alloc`, `realloc`, `free`)
@@ -181,8 +205,9 @@ save_safetensors { model: W }, "trained.safetensors";
 
 // Dynamic allocation
 alloc buffer = [rows, cols];
-realloc buffer = [new_rows, cols];  // Resize during training
+realloc buffer = [new_rows, cols];  // Resize during training (preserves optimizer state)
 free buffer;
+reset_optimizer();  // Explicitly clear Adam/RMSprop momentum if needed
 ```
 
 **[→ Full Language Guide](LANGUAGE_GUIDE.md)**
@@ -289,11 +314,12 @@ Source Code               Compilation Pipeline              Output
 
 | Mode | Time | Speedup |
 |------|------|---------|
-| Python + NumPy | ~185ms | baseline |
-| NOMA interpreter | ~128ms | 1.4× |
-| NOMA compiled | **~1ms** | **128×** |
+| Python + NumPy | ~29ms | baseline |
+| NOMA interpreter | ~99ms | 0.3× |
+| NOMA compiled | **~0.8ms** | **35×** |
+| C++ (hand-optimized) | ~0.8ms | 35× |
 
-*Benchmarked on XOR self-growing neural network (2 training phases, dynamic reallocation)*
+*Benchmarked on XOR self-growing neural network with Adam optimizer (200 + 120 iterations, dynamic reallocation at step 200). NOMA achieves 3× lower final loss due to optimizer state preservation.*
 
 ### Known Limitations
 - **Single data type**: Only `f64` (no int, bool, string)
