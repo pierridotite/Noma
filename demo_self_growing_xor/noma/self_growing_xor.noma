@@ -1,0 +1,62 @@
+// Self-growing XOR demo for NOMA
+// Starts with a bottleneck hidden layer (2 units), detects plateau,
+// reallocates to a wider layer (16 units), and continues training without reset.
+
+fn main() {
+    // XOR dataset
+    let X = tensor [
+        [0.0, 0.0],
+        [0.0, 1.0],
+        [1.0, 0.0],
+        [1.0, 1.0]
+    ];
+    let Y = tensor [
+        [0.0],
+        [1.0],
+        [1.0],
+        [0.0]
+    ];
+
+    // Initial parameters (small model: hidden=2)
+    learn W1 = rand_normal_tensor(0.0, 0.5, 2.0, 2.0);
+    learn W2 = rand_normal_tensor(0.0, 0.5, 2.0, 1.0);
+
+    // Phase 1: train the tiny network; expect a plateau
+    let optimizer = 2.0;      // Adam
+    let learning_rate = 0.05;
+    let max_iterations = 200.0;
+
+    optimize(W1) until loss < 0.05 {
+        let hidden = sigmoid(matmul(X, W1));
+        let pred = sigmoid(matmul(hidden, W2));
+        let err = pred - Y;
+        let loss = mean(err * err);
+        print(loss);
+        minimize loss;
+    }
+
+    let phase1_loss = loss;
+    let plateau_threshold = 0.10;  // plateau if we cannot beat this
+
+    // Growth trigger: widen the hidden layer once if plateaued
+    if phase1_loss > plateau_threshold {
+        realloc W1 = [2.0, 16.0];
+        realloc W2 = [16.0, 1.0];
+    }
+
+    // Phase 2: continue training (only effective if we grew)
+    let optimizer = 2.0;      // Adam
+    let learning_rate = 0.12;
+    let max_iterations = 400.0;
+
+    optimize(W1) until loss < 0.002 {
+        let hidden = sigmoid(matmul(X, W1));
+        let pred = sigmoid(matmul(hidden, W2));
+        let err = pred - Y;
+        let loss = mean(err * err);
+        print(loss);
+        minimize loss;
+    }
+
+    return loss;
+}

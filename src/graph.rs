@@ -868,6 +868,26 @@ impl ComputationalGraph {
         self.nodes.get_mut(&id)
     }
 
+    /// Reallocate a learnable tensor in-place with a new shape (preserves data)
+    pub fn realloc_learnable_tensor_by_id(&mut self, id: NodeId, new_shape: Vec<usize>) -> Result<NodeId, String> {
+        let node = self.get_node_mut(id).ok_or_else(|| "Invalid node id for learnable realloc".to_string())?;
+        match (&node.node_type, node.value.clone()) {
+            (NodeType::Learnable(_), Some(Value::Tensor(t))) => {
+                let new_size: usize = new_shape.iter().product();
+                let mut new_data = vec![0.0; new_size];
+                let copy_len = t.data.len().min(new_size);
+                new_data[..copy_len].copy_from_slice(&t.data[..copy_len]);
+
+                let tensor = Tensor::new(new_data, new_shape.clone())?;
+                node.value = Some(Value::Tensor(tensor));
+                node.gradient = Some(Value::Tensor(Tensor::zeros(new_shape)));
+                Ok(id)
+            }
+            (NodeType::Learnable(_), Some(Value::Scalar(_))) => Err("Cannot realloc scalar learnable".to_string()),
+            _ => Err("Cannot realloc: node is not a learnable tensor".to_string()),
+        }
+    }
+
     pub fn nodes(&self) -> &HashMap<NodeId, Node> {
         &self.nodes
     }

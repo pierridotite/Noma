@@ -56,7 +56,19 @@ fn lower_statements_shared(
                         *last_node = Some(node_id);
                     }
                     _ => {
-                        let node_id = graph.add_learnable(name.clone(), 0.0);
+                        // Evaluate expression to get an initial value (scalar or tensor)
+                        let val_id = graph.build_from_expression_with_functions(value, variables, func_registry)?;
+                        graph.forward_pass()?;
+                        let init_val = graph.get_node(val_id)
+                            .and_then(|n| n.value.clone())
+                            .ok_or_else(|| format!("Failed to evaluate initializer for '{}'", name))?;
+
+                        let node_id = match init_val {
+                            noma_compiler::Value::Scalar(s) => graph.add_learnable(name.clone(), s),
+                            noma_compiler::Value::Tensor(t) => graph.add_learnable_tensor(name.clone(), t.data, t.shape)
+                                .map_err(|e| e.to_string())?,
+                        };
+
                         variables.insert(name.clone(), node_id);
                         *last_node = Some(node_id);
                     }
@@ -147,20 +159,47 @@ fn lower_statements_shared(
                 // free doesn't change last_node
             }
             noma_compiler::Statement::Realloc { name, shape } => {
-                // Evaluate shape dimensions at lowering time
+                // Evaluate shape dimensions; avoid forward passes during realloc to prevent transient mismatches
                 let mut dims = Vec::new();
                 for dim_expr in shape {
-                    let dim_id = graph.build_from_expression_with_functions(dim_expr, variables, func_registry)?;
-                    graph.forward_pass()?;
-                    let dim_val = graph.get_node(dim_id)
-                        .and_then(|n| n.value.clone())
-                        .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s as usize), _ => None })
-                        .ok_or_else(|| format!("Realloc dimension must be a scalar for '{}'", name))?;
-                    dims.push(dim_val);
+                    if let noma_compiler::Expression::Number(n) = dim_expr {
+                        dims.push(*n as usize);
+                    } else {
+                        let dim_id = graph.build_from_expression_with_functions(dim_expr, variables, func_registry)?;
+                        // Fallback: single forward pass for non-literal dims
+                        graph.forward_pass()?;
+                        let dim_val = graph.get_node(dim_id)
+                            .and_then(|n| n.value.clone())
+                            .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s as usize), _ => None })
+                            .ok_or_else(|| format!("Realloc dimension must be a scalar for '{}'", name))?;
+                        dims.push(dim_val);
+                    }
                 }
-                let node_id = graph.realloc_heap_tensor(name, dims)?;
-                variables.insert(name.clone(), node_id);
-                *last_node = Some(node_id);
+                // Prefer reallocating learnable tensors; fallback to heap tensors
+                if let Some(existing_id) = variables.get(name) {
+                    if let Some(node) = graph.get_node(*existing_id) {
+                        match &node.node_type {
+                            noma_compiler::NodeType::Learnable(_) => {
+                                let node_id = graph.realloc_learnable_tensor_by_id(*existing_id, dims.clone())?;
+                                variables.insert(name.clone(), node_id);
+                                *last_node = Some(node_id);
+                            }
+                            _ => {
+                                let node_id = graph.realloc_heap_tensor(name, dims)?;
+                                variables.insert(name.clone(), node_id);
+                                *last_node = Some(node_id);
+                            }
+                        }
+                    } else {
+                        let node_id = graph.realloc_heap_tensor(name, dims)?;
+                        variables.insert(name.clone(), node_id);
+                        *last_node = Some(node_id);
+                    }
+                } else {
+                    let node_id = graph.realloc_heap_tensor(name, dims)?;
+                    variables.insert(name.clone(), node_id);
+                    *last_node = Some(node_id);
+                }
             }
             noma_compiler::Statement::LoadCsv { name, path } => {
                 // Load CSV file and create tensor
