@@ -1,0 +1,129 @@
+{
+  "timestamp": "20251227_205002",
+  "config": {
+    "experiment": {
+      "name": "self_growing_xor",
+      "description": "XOR classification with dynamic architecture growth"
+    },
+    "hyperparams": {
+      "lr_phase1": 0.05,
+      "lr_phase2": 0.12,
+      "beta1": 0.9,
+      "beta2": 0.999,
+      "epsilon": 1e-08,
+      "max_iter_phase1": 200,
+      "max_iter_phase2": 400,
+      "hidden_initial": 2,
+      "hidden_final": 16,
+      "threshold_phase1": 0.05,
+      "threshold_final": 0.002,
+      "growth_step": 200
+    },
+    "benchmark": {
+      "num_runs": 2,
+      "warmup_iters": 50,
+      "mode": "bench",
+      "precision": "f64"
+    },
+    "dataset": {
+      "X": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ],
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          1.0
+        ]
+      ],
+      "Y": [
+        [
+          0.0
+        ],
+        [
+          1.0
+        ],
+        [
+          1.0
+        ],
+        [
+          0.0
+        ]
+      ]
+    }
+  },
+  "compile_times_ms": {
+    "noma": 227.05224999845086,
+    "cpp": 1504.3982150000375
+  },
+  "results": {
+    "noma_compiled": {
+      "runs": 2,
+      "total_ms_median": 0.8782624990999466,
+      "total_ms_min": 0.6805739994888427,
+      "total_ms_max": 1.0759509987110505,
+      "final_loss_median": 0.001989,
+      "iters_total": 1,
+      "impl": "noma_compiled"
+    },
+    "noma_interpreted": {
+      "runs": 2,
+      "total_ms_median": 108.11755600025208,
+      "total_ms_min": 93.69194400096603,
+      "total_ms_max": 122.54316799953813,
+      "final_loss_median": 0.0019875704298612396,
+      "iters_total": 359,
+      "impl": "noma_interpreted"
+    },
+    "numpy_manual": {
+      "runs": 2,
+      "total_ms_median": 27.408345499679854,
+      "total_ms_min": 26.75386999908369,
+      "total_ms_max": 28.062821000276017,
+      "final_loss_median": 0.001976841788422055,
+      "cold_start_ms": 0.0004760004230774939,
+      "compile_overhead_ms": 0,
+      "train_warmup_ms": 4.809406998901977,
+      "train_steady_ms": 23.25027900042187,
+      "steady_step_us_median": 88.95199971448164,
+      "steady_step_us_p95": 98.34699958446436,
+      "growth_event_ms": 0.06343899985949975,
+      "iters_total": 320,
+      "time_to_threshold_ms": 28.062237000995083,
+      "final_accuracy": 1.0,
+      "peak_rss_kb": 30444,
+      "precision": "f64",
+      "device": "cpu",
+      "impl": "numpy_manual"
+    },
+    "cpp_manual": {
+      "runs": 2,
+      "total_ms_median": 1.1234685,
+      "total_ms_min": 0.776477,
+      "total_ms_max": 1.47046,
+      "final_loss_median": 0.00197684,
+      "cold_start_ms": 0,
+      "compile_overhead_ms": 0,
+      "train_warmup_ms": 0.173855,
+      "train_steady_ms": 1.29645,
+      "steady_step_us_median": 2.801,
+      "steady_step_us_p95": 6.92,
+      "growth_event_ms": 0.002225,
+      "iters_total": 320,
+      "time_to_threshold_ms": 1.470177,
+      "final_accuracy": 1,
+      "peak_rss_kb": 15360,
+      "precision": "f64",
+      "device": "cpu",
+      "impl": "cpp_manual"
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "experiment": {
+    "name": "self_growing_xor",
+    "description": "XOR classification with dynamic architecture growth"
+  },
+  "hyperparams": {
+    "lr_phase1": 0.05,
+    "lr_phase2": 0.12,
+    "beta1": 0.9,
+    "beta2": 0.999,
+    "epsilon": 1e-8,
+    "max_iter_phase1": 200,
+    "max_iter_phase2": 400,
+    "hidden_initial": 2,
+    "hidden_final": 16,
+    "threshold_phase1": 0.05,
+    "threshold_final": 0.002,
+    "growth_step": 200
+  },
+  "benchmark": {
+    "num_runs": 10,
+    "warmup_iters": 50,
+    "mode": "bench",
+    "precision": "f64"
+  },
+  "dataset": {
+    "X": [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]],
+    "Y": [[0.0], [1.0], [1.0], [0.0]]
+  }
+}

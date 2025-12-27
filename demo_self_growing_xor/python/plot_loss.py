@@ -1,71 +1,168 @@
 #!/usr/bin/env python3
-"""Plot loss curve with growth marker.
-Usage: python plot_loss.py out/noma_loss.csv out/loss.png
 """
-from __future__ import annotations
-
+Generate loss.png with growth marker from latest benchmark run.
+"""
 import csv
-import sys
+import json
 from pathlib import Path
-from typing import List, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
+
+ROOT = Path(__file__).parent.parent
+OUT_DIR = ROOT / "out"
 
 
-def load_csv(path: Path) -> Tuple[List[int], List[float], List[int]]:
-    steps: List[int] = []
-    losses: List[float] = []
-    hidden: List[int] = []
-    with path.open(newline="", encoding="utf-8") as f:
+def load_loss_csv(path: Path) -> tuple[list[int], list[float], list[int]]:
+    """Load loss.csv and return steps, losses, hidden sizes."""
+    steps, losses, hiddens = [], [], []
+    with path.open() as f:
         reader = csv.DictReader(f)
         for row in reader:
             steps.append(int(row["step"]))
             losses.append(float(row["loss"]))
-            hidden.append(int(float(row["hidden"])))
-    return steps, losses, hidden
+            hiddens.append(int(row["hidden"]))
+    return steps, losses, hiddens
 
 
-def find_growth_step(hidden: List[int]) -> int | None:
-    if not hidden:
+def find_latest_run() -> Path | None:
+    """Find the most recent run directory."""
+    runs_dir = OUT_DIR / "runs"
+    if not runs_dir.exists():
         return None
-    start = hidden[0]
-    for idx, h in enumerate(hidden):
-        if h != start:
-            return idx
-    return None
-
-
-def plot_loss(csv_path: Path, png_path: Path) -> None:
-    steps, losses, hidden = load_csv(csv_path)
-    growth_idx = find_growth_step(hidden)
-
-    plt.figure(figsize=(7.5, 4.5))
-    plt.plot(steps, losses, label="NOMA loss", color="#1f77b4")
-
-    if growth_idx is not None:
-        growth_step = steps[growth_idx]
-        plt.axvline(growth_step, color="#d62728", linestyle="--", linewidth=1.2, label=f"growth @ step {growth_step}")
-        plt.scatter([growth_step], [losses[growth_idx]], color="#d62728", zorder=5)
-
-    plt.xlabel("step")
-    plt.ylabel("loss (MSE)")
-    plt.title("Self-growing XOR in NOMA")
-    plt.grid(True, linestyle=":", linewidth=0.5)
-    plt.legend()
-    plt.tight_layout()
-
-    png_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(png_path, dpi=160)
-    print(f"[plot] saved {png_path}")
+    
+    run_dirs = sorted([d for d in runs_dir.iterdir() if d.is_dir() and d.name != "latest"])
+    return run_dirs[-1] if run_dirs else None
 
 
 def main() -> int:
-    if len(sys.argv) < 3:
-        print("Usage: python plot_loss.py <input_csv> <output_png>")
+    latest = find_latest_run()
+    if not latest:
+        print("No benchmark runs found. Run benchmark.py first.")
         return 1
-    csv_path = Path(sys.argv[1])
-    png_path = Path(sys.argv[2])
-    plot_loss(csv_path, png_path)
+    
+    print(f"Loading data from: {latest}")
+    
+    # Find run_0 for each implementation
+    run0 = latest / "run_0"
+    if not run0.exists():
+        print("No run_0 directory found.")
+        return 1
+    
+    implementations = {}
+    colors = {
+        "noma": "#2ecc71",
+        "noma_interpreted": "#27ae60",
+        "numpy_manual": "#e74c3c",
+        "cpp_manual": "#9b59b6",
+        "torch_eager": "#3498db",
+        "torch_compile": "#1abc9c",
+    }
+    
+    # Labels for display (cleaner names)
+    display_names = {
+        "noma": "NOMA",
+        "noma_interpreted": "NOMA (interpreted)",
+        "numpy_manual": "NumPy",
+        "cpp_manual": "C++",
+        "torch_eager": "PyTorch Eager",
+        "torch_compile": "PyTorch Compile",
+    }
+    
+    for impl_dir in run0.iterdir():
+        if impl_dir.is_dir():
+            loss_file = impl_dir / "loss.csv"
+            if loss_file.exists():
+                steps, losses, hiddens = load_loss_csv(loss_file)
+                # Skip implementations with too few data points (compiled binaries)
+                if len(steps) < 10:
+                    print(f"  Skipping {impl_dir.name}: only {len(steps)} points")
+                    continue
+                # Rename noma_interpreted to just "noma" for display
+                name = "noma" if impl_dir.name == "noma_interpreted" else impl_dir.name
+                # Skip noma_compiled since we use noma_interpreted for curves
+                if impl_dir.name == "noma_compiled":
+                    continue
+                implementations[name] = (steps, losses, hiddens)
+    
+    if not implementations:
+        print("No loss.csv files found.")
+        return 1
+    
+    # Create figure
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Line styles to differentiate overlapping curves
+    line_styles = {
+        "noma": "-",
+        "numpy_manual": "-",
+        "cpp_manual": "--",  # Dashed to show when overlapping with NumPy
+        "torch_eager": "-",
+        "torch_compile": ":",
+    }
+    line_widths = {
+        "noma": 2.0,
+        "numpy_manual": 1.5,
+        "cpp_manual": 2.5,  # Thicker dashed line
+        "torch_eager": 1.5,
+        "torch_compile": 2.0,
+    }
+    
+    # Plot 1: Full loss curves
+    # Sort to ensure consistent plotting order (NOMA first, then others)
+    plot_order = ["noma", "cpp_manual", "numpy_manual", "torch_eager", "torch_compile"]
+    sorted_impls = sorted(implementations.items(), key=lambda x: plot_order.index(x[0]) if x[0] in plot_order else 99)
+    
+    for impl, (steps, losses, hiddens) in sorted_impls:
+        color = colors.get(impl, "#95a5a6")
+        label = display_names.get(impl, impl)
+        ls = line_styles.get(impl, "-")
+        lw = line_widths.get(impl, 1.5)
+        ax1.plot(steps, losses, ls, color=color, linewidth=lw, label=label, alpha=0.9)
+        
+        # Mark growth point
+        growth_idx = next((i for i, h in enumerate(hiddens) if h > hiddens[0]), None)
+        if growth_idx:
+            ax1.axvline(steps[growth_idx], color=color, linestyle='--', alpha=0.3)
+    
+    ax1.set_xlabel('Iteration')
+    ax1.set_ylabel('Loss (MSE)')
+    ax1.set_title('Training Convergence')
+    ax1.set_yscale('log')
+    ax1.legend(loc='upper right', fontsize=9)
+    ax1.grid(True, alpha=0.3)
+    
+    # Add growth annotation
+    ax1.axvline(200, color='gray', linestyle=':', alpha=0.5)
+    ax1.annotate('Growth\n(2->16)', xy=(200, 0.1), xytext=(220, 0.2),
+                 fontsize=9, ha='left', va='bottom',
+                 arrowprops=dict(arrowstyle='->', color='gray', alpha=0.5))
+    
+    # Plot 2: Post-growth zoom (first 50 steps after growth)
+    for impl, (steps, losses, hiddens) in sorted_impls:
+        growth_idx = next((i for i, h in enumerate(hiddens) if h > hiddens[0]), None)
+        if growth_idx and growth_idx + 50 < len(losses):
+            color = colors.get(impl, "#95a5a6")
+            label = display_names.get(impl, impl)
+            ls = line_styles.get(impl, "-")
+            lw = line_widths.get(impl, 1.5)
+            x = range(50)
+            y = losses[growth_idx:growth_idx + 50]
+            ax2.plot(x, y, ls, color=color, linewidth=lw, label=label, alpha=0.9)
+    
+    ax2.set_xlabel('Steps after growth')
+    ax2.set_ylabel('Loss (MSE)')
+    ax2.set_title('Post-Growth Convergence (Effect of Optimizer State)')
+    ax2.legend(loc='upper right', fontsize=9)
+    ax2.grid(True, alpha=0.3)
+    
+    plt.suptitle('XOR Training: Dynamic Architecture Growth', fontsize=12, fontweight='bold')
+    plt.tight_layout()
+    
+    output = OUT_DIR / "loss.png"
+    plt.savefig(output, dpi=150, bbox_inches='tight')
+    print(f"Saved: {output}")
+    
     return 0
 
 

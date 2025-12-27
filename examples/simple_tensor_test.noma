@@ -1,0 +1,25 @@
+// Simple tensor test for LLVM codegen validation
+// This tests tensor operations without training loops
+
+fn main() {
+    // Create simple tensors
+    let A = tensor [[1.0, 2.0], [3.0, 4.0]];
+    let B = tensor [[5.0, 6.0], [7.0, 8.0]];
+    
+    // Matrix multiplication
+    let C = matmul(A, B);
+    
+    // Element-wise operations
+    let D = A + B;
+    let E = A * 2.0;
+    
+    // Activation function
+    let F = sigmoid(A);
+    
+    // Reduction
+    let s = sum(C);
+    let m = mean(D);
+    
+    // Return final scalar
+    return s + m;
+}

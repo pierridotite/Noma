@@ -439,6 +439,21 @@ enum Commands {
         file: PathBuf,
     },
 
+    /// Compile and run a NOMA source file (faster execution, no training support)
+    FastRun {
+        /// Input .noma file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Optimization level (0,1,2,3). Defaults to 2.
+        #[arg(short = 'O', long = "opt-level", value_parser = clap::value_parser!(u8).range(0..=3))]
+        opt_level: Option<u8>,
+
+        /// Enable fast-math optimizations
+        #[arg(long = "fast-math")]
+        fast_math: bool,
+    },
+
     /// Run autodiff demo: minimize y = x^2
     Demo,
 
@@ -478,6 +493,9 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Run { file } => {
             run_noma(file)?;
+        }
+        Commands::FastRun { file, opt_level, fast_math } => {
+            fast_run_noma(file, opt_level, fast_math)?;
         }
         Commands::Demo => {
             run_demo()?;
@@ -992,6 +1010,107 @@ fn compile_to_ptx(file: PathBuf, output: Option<PathBuf>, n_elems: Option<u32>, 
         println!("======================================\n");
     }
 
+    Ok(())
+}
+
+/// Fast-run: compile to native and execute (for programs without training loops)
+fn fast_run_noma(file: PathBuf, opt_level: Option<u8>, fast_math: bool) -> anyhow::Result<()> {
+    use std::time::Instant;
+    
+    let start = Instant::now();
+    
+    // Create temporary executable
+    let tmp_dir = env::temp_dir();
+    let exe_path = tmp_dir.join("noma_fast_run");
+    
+    // Build the executable (quietly)
+    let source = fs::read_to_string(&file)?;
+    let mut lexer = Lexer::new(&source);
+    let tokens = lexer.tokenize().map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    let mut parser = NomaParser::new(tokens);
+    let ast = parser.parse().map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    
+    let (func_registry, main_func) = collect_functions(&ast);
+    let func = main_func.ok_or_else(|| anyhow::anyhow!("No function found to compile"))?;
+    
+    let mut graph = ComputationalGraph::new();
+    let mut variables: HashMap<String, noma_compiler::NodeId> = HashMap::new();
+    let mut last_node: Option<noma_compiler::NodeId> = None;
+    
+    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry)
+        .map_err(|e| anyhow::anyhow!(e))?;
+    
+    let _ = graph.forward_pass();
+    
+    let mut codegen = LLVMCodegen::new().with_fast_math(fast_math);
+    let compute_ir = codegen.generate_with_return(&graph, last_node).map_err(|e| anyhow::anyhow!(e))?;
+    
+    let wrapped_ir = format!(
+        "{}\n\ndefine i32 @main() {{\nentry:\n  %result = call double @compute()\n  %resultptr = alloca double\n  store double %result, double* %resultptr\n  %fmt = getelementptr [4 x i8], [4 x i8]* @.str, i32 0, i32 0\n  call i32 (i8*, ...) @printf(i8* %fmt, double %result)\n  ret i32 0\n}}\n",
+        compute_ir
+    );
+    
+    let ir_path = tmp_dir.join("noma_fast_run.ll");
+    fs::write(&ir_path, &wrapped_ir)?;
+    
+    // Optimize
+    let opt_level_val = opt_level.unwrap_or(2);
+    if opt_level_val > 0 {
+        if let Ok(_) = Command::new("opt").arg("--version").output() {
+            let opt_output = tmp_dir.join("noma_fast_run_opt.ll");
+            let opt_flag = format!("-O{}", opt_level_val);
+            if let Ok(s) = Command::new("opt")
+                .arg("-S").arg(&opt_flag).arg(&ir_path).arg("-o").arg(&opt_output)
+                .status() {
+                if s.success() {
+                    fs::copy(&opt_output, &ir_path)?;
+                }
+            }
+        }
+    }
+    
+    // Compile to object
+    let obj_path = tmp_dir.join("noma_fast_run.o");
+    if let Ok(_) = Command::new("llc").arg("--version").output() {
+        let status = Command::new("llc")
+            .arg("-filetype=obj").arg(&ir_path).arg("-o").arg(&obj_path)
+            .status();
+        if status.is_err() || !status.unwrap().success() {
+            return Err(anyhow::anyhow!("llc failed"));
+        }
+    } else {
+        return Err(anyhow::anyhow!("llc not found"));
+    }
+    
+    // Link
+    let link_ok = Command::new("gcc")
+        .arg(&obj_path).arg("-lm").arg("-no-pie").arg("-o").arg(&exe_path)
+        .status().map(|s| s.success()).unwrap_or(false)
+        || Command::new("clang")
+        .arg(&obj_path).arg("-lm").arg("-no-pie").arg("-o").arg(&exe_path)
+        .status().map(|s| s.success()).unwrap_or(false);
+    
+    if !link_ok {
+        return Err(anyhow::anyhow!("Linking failed"));
+    }
+    
+    let compile_time = start.elapsed();
+    
+    // Execute
+    let exec_start = Instant::now();
+    let output = Command::new(&exe_path).output()?;
+    let exec_time = exec_start.elapsed();
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    print!("{}", stdout);
+    
+    // Cleanup
+    let _ = fs::remove_file(&ir_path);
+    let _ = fs::remove_file(&obj_path);
+    let _ = fs::remove_file(&exe_path);
+    
+    eprintln!("[fast-run] Compiled in {:?}, executed in {:?}", compile_time, exec_time);
+    
     Ok(())
 }
 

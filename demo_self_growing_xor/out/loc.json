@@ -1,0 +1,22 @@
+{
+  "noma": {
+    "file": "noma/xor.noma",
+    "loc_total": 45
+  },
+  "numpy_manual": {
+    "file": "baselines/python_numpy_manual/xor.py",
+    "loc_total": 150
+  },
+  "torch_eager": {
+    "file": "baselines/python_torch/xor_eager.py",
+    "loc_total": 139
+  },
+  "torch_compile": {
+    "file": "baselines/python_torch/xor_compile.py",
+    "loc_total": 150
+  },
+  "cpp_manual": {
+    "file": "baselines/cpp_manual/xor.cpp",
+    "loc_total": 262
+  }
+}
