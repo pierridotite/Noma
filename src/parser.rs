@@ -197,6 +197,7 @@ impl Parser {
             TokenType::Alloc => self.parse_alloc(),
             TokenType::Free => self.parse_free(),
             TokenType::Realloc => self.parse_realloc(),
+            TokenType::ResetOptimizer => self.parse_reset_optimizer(),
             TokenType::LoadCsv => self.parse_load_csv(),
             TokenType::SaveCsv => self.parse_save_csv(),
             TokenType::LoadSafetensors => self.parse_load_safetensors(),
@@ -369,6 +370,16 @@ impl Parser {
         self.consume(TokenType::Semicolon, "Expected ';'")?;
         
         Ok(Statement::Realloc { name, shape })
+    }
+
+    /// Parse 'reset_optimizer' statement: reset_optimizer();
+    fn parse_reset_optimizer(&mut self) -> Result<Statement, NomaError> {
+        self.consume(TokenType::ResetOptimizer, "Expected 'reset_optimizer'")?;
+        self.consume(TokenType::LParen, "Expected '(' after reset_optimizer")?;
+        self.consume(TokenType::RParen, "Expected ')'")?;
+        self.consume(TokenType::Semicolon, "Expected ';'")?;
+        
+        Ok(Statement::ResetOptimizer)
     }
 
     /// Parse 'load_csv' statement: let name = load_csv("path.csv");

@@ -53,6 +53,7 @@ def main() -> int:
     colors = {
         "noma": "#2ecc71",
         "noma_interpreted": "#27ae60",
+        "noma_reset": "#e67e22",  # Orange for reset (control)
         "numpy_manual": "#e74c3c",
         "cpp_manual": "#9b59b6",
         "torch_eager": "#3498db",
@@ -61,8 +62,9 @@ def main() -> int:
     
     # Labels for display (cleaner names)
     display_names = {
-        "noma": "NOMA",
+        "noma": "NOMA (preserve)",
         "noma_interpreted": "NOMA (interpreted)",
+        "noma_reset": "NOMA (reset)",
         "numpy_manual": "NumPy",
         "cpp_manual": "C++",
         "torch_eager": "PyTorch Eager",
@@ -95,6 +97,7 @@ def main() -> int:
     # Line styles to differentiate overlapping curves
     line_styles = {
         "noma": "-",
+        "noma_reset": "-.",  # Dash-dot for reset control
         "numpy_manual": "-",
         "cpp_manual": "--",  # Dashed to show when overlapping with NumPy
         "torch_eager": "-",
@@ -102,6 +105,7 @@ def main() -> int:
     }
     line_widths = {
         "noma": 2.0,
+        "noma_reset": 2.0,
         "numpy_manual": 1.5,
         "cpp_manual": 2.5,  # Thicker dashed line
         "torch_eager": 1.5,
@@ -110,7 +114,7 @@ def main() -> int:
     
     # Plot 1: Full loss curves
     # Sort to ensure consistent plotting order (NOMA first, then others)
-    plot_order = ["noma", "cpp_manual", "numpy_manual", "torch_eager", "torch_compile"]
+    plot_order = ["noma", "noma_reset", "cpp_manual", "numpy_manual", "torch_eager", "torch_compile"]
     sorted_impls = sorted(implementations.items(), key=lambda x: plot_order.index(x[0]) if x[0] in plot_order else 99)
     
     for impl, (steps, losses, hiddens) in sorted_impls:

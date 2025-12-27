@@ -220,7 +220,8 @@ def main() -> int:
     
     # Compile binaries
     print("\n[2] Compiling binaries...")
-    noma_file = ROOT / "noma" / "xor.noma"
+    # Use xor_bench.noma with fixed iterations for fair comparison
+    noma_file = ROOT / "noma" / "xor_bench.noma"
     noma_binary = runs_dir / "noma_compiled_bin"
     cpp_source = ROOT / "baselines" / "cpp_manual" / "xor.cpp"
     cpp_binary = runs_dir / "cpp_manual_bin"
@@ -235,6 +236,7 @@ def main() -> int:
     implementations = {
         "noma_compiled": [],
         "noma_interpreted": [],
+        "noma_reset": [],  # NOMA with optimizer state reset after growth (control)
         "numpy_manual": [],
         "cpp_manual": [],
     }
@@ -265,6 +267,13 @@ def main() -> int:
         timings = run_noma_interpreted(noma_file, run_dir, ROOT.parent)
         implementations["noma_interpreted"].append(timings)
         print(f"    noma_interpreted: {timings['total_ms']:.2f}ms")
+        
+        # NOMA reset (control - resets optimizer state after growth)
+        noma_reset_file = ROOT / "noma" / "xor_reset.noma"
+        run_dir = runs_dir / f"run_{run_idx}" / "noma_reset"
+        timings = run_noma_interpreted(noma_reset_file, run_dir, ROOT.parent)
+        implementations["noma_reset"].append(timings)
+        print(f"    noma_reset: {timings['total_ms']:.2f}ms (control)")
         
         # NumPy manual
         run_dir = runs_dir / f"run_{run_idx}" / "numpy_manual"

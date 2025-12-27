@@ -39,6 +39,7 @@ fn lower_statements_shared(
     stmts: &[noma_compiler::Statement],
     last_node: &mut Option<noma_compiler::NodeId>,
     func_registry: &FunctionRegistry,
+    optimizer_state: &mut OptimizerState,
 ) -> Result<(), String> {
     for stmt in stmts {
         match stmt {
@@ -99,7 +100,7 @@ fn lower_statements_shared(
                 }
             }
             noma_compiler::Statement::Block(inner) => {
-                lower_statements_shared(graph, variables, inner, last_node, func_registry)?;
+                lower_statements_shared(graph, variables, inner, last_node, func_registry, optimizer_state)?;
             }
             noma_compiler::Statement::If { condition, then_branch, else_branch } => {
                 let cond_id = graph.build_from_expression_with_functions(condition, variables, func_registry)?;
@@ -109,9 +110,9 @@ fn lower_statements_shared(
                     .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
                     .unwrap_or(0.0);
                 if cond_val != 0.0 {
-                    lower_statements_shared(graph, variables, then_branch, last_node, func_registry)?;
+                    lower_statements_shared(graph, variables, then_branch, last_node, func_registry, optimizer_state)?;
                 } else {
-                    lower_statements_shared(graph, variables, else_branch, last_node, func_registry)?;
+                    lower_statements_shared(graph, variables, else_branch, last_node, func_registry, optimizer_state)?;
                 }
             }
             noma_compiler::Statement::While { condition, body } => {
@@ -123,18 +124,19 @@ fn lower_statements_shared(
                         .and_then(|v| match v { noma_compiler::Value::Scalar(s) => Some(s), _ => None })
                         .unwrap_or(0.0);
                     if cond_val == 0.0 { break; }
-                    lower_statements_shared(graph, variables, body, last_node, func_registry)?;
+                    lower_statements_shared(graph, variables, body, last_node, func_registry, optimizer_state)?;
                 }
             }
             noma_compiler::Statement::OptimizeLoop { target, condition, body, .. } => {
                 // Lower body first so condition can reference values like `loss`
                 let mut loop_last: Option<noma_compiler::NodeId> = None;
-                lower_statements_shared(graph, variables, body, &mut loop_last, func_registry)?;
+                lower_statements_shared(graph, variables, body, &mut loop_last, func_registry, optimizer_state)?;
                 let objective = loop_last.or(*last_node).ok_or_else(|| "Optimize loop body produced no expressions".to_string())?;
                 let cond_id = graph.build_from_expression_with_functions(condition, variables, func_registry)?;
 
                 let (config, iters) = pick_hyperparams(graph, variables, 0.1, 1000);
-                run_optimize_loop(graph, variables, cond_id, objective, target, config, iters)?;
+                // Use shared optimizer state to preserve momentum across optimize loops
+                run_optimize_loop(graph, variables, cond_id, objective, target, config, iters, optimizer_state)?;
                 *last_node = Some(objective);
             }
             noma_compiler::Statement::Alloc { name, shape } => {
@@ -302,8 +304,12 @@ fn lower_statements_shared(
                     }
                     
                     // Execute batch body
-                    lower_statements_shared(graph, variables, body, last_node, func_registry)?;
+                    lower_statements_shared(graph, variables, body, last_node, func_registry, optimizer_state)?;
                 }
+            }
+            noma_compiler::Statement::ResetOptimizer => {
+                // Clear all optimizer state (m, v, t) to restart from scratch
+                optimizer_state.reset();
             }
         }
     }
@@ -530,13 +536,14 @@ fn run_optimize_loop(
     target: &str,
     config: OptimizerConfig,
     max_iter: usize,
+    optimizer_state: &mut OptimizerState,
 ) -> Result<(), String> {
     if !variables.contains_key(target) {
         return Err(format!("Optimize target '{}' not defined", target));
     }
 
-    // Initialize optimizer state for Adam/RMSprop
-    let mut optimizer_state = OptimizerState::new();
+    // Use shared optimizer state to preserve momentum across optimize loops
+    // This enables faster convergence when architecture changes (realloc)
 
     for _ in 0..max_iter {
         graph.forward_pass()?;
@@ -546,7 +553,7 @@ fn run_optimize_loop(
         }
 
         graph.backward_pass(objective_id)?;
-        graph.optimize_step_with_config(&mut optimizer_state, &config)?;
+        graph.optimize_step_with_config(optimizer_state, &config)?;
         graph.reset_gradients();
     }
 
@@ -797,8 +804,9 @@ fn compile_to_llvm(file: PathBuf, output: Option<PathBuf>, optimize: bool, opt_l
     let mut graph = ComputationalGraph::new();
     let mut variables: HashMap<String, noma_compiler::NodeId> = HashMap::new();
     let mut last_node: Option<noma_compiler::NodeId> = None;
+    let mut optimizer_state = OptimizerState::new();
 
-    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry)
+    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry, &mut optimizer_state)
         .map_err(|e| anyhow::anyhow!(e))?;
 
     // Ensure we have something to return
@@ -936,8 +944,9 @@ fn run_noma(file: PathBuf) -> anyhow::Result<()> {
     let mut graph = ComputationalGraph::new();
     let mut variables: HashMap<String, noma_compiler::NodeId> = HashMap::new();
     let mut last_node: Option<noma_compiler::NodeId> = None;
+    let mut optimizer_state = OptimizerState::new();
 
-    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry)
+    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry, &mut optimizer_state)
         .map_err(|e| anyhow::anyhow!(e))?;
 
     graph.forward_pass().map_err(|e| anyhow::anyhow!(e))?;
@@ -970,8 +979,9 @@ fn compile_to_ptx(file: PathBuf, output: Option<PathBuf>, n_elems: Option<u32>, 
     let mut graph = ComputationalGraph::new();
     let mut variables: HashMap<String, noma_compiler::NodeId> = HashMap::new();
     let mut last_node: Option<noma_compiler::NodeId> = None;
+    let mut optimizer_state = OptimizerState::new();
 
-    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry)
+    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry, &mut optimizer_state)
         .map_err(|e| anyhow::anyhow!(e))?;
 
     let mut codegen = PTXCodegen::new();
@@ -1036,8 +1046,9 @@ fn fast_run_noma(file: PathBuf, opt_level: Option<u8>, fast_math: bool) -> anyho
     let mut graph = ComputationalGraph::new();
     let mut variables: HashMap<String, noma_compiler::NodeId> = HashMap::new();
     let mut last_node: Option<noma_compiler::NodeId> = None;
+    let mut optimizer_state = OptimizerState::new();
     
-    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry)
+    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry, &mut optimizer_state)
         .map_err(|e| anyhow::anyhow!(e))?;
     
     let _ = graph.forward_pass();
@@ -1135,8 +1146,9 @@ fn build_executable(file: PathBuf, output: PathBuf, opt_level: Option<u8>, fast_
     let mut graph = ComputationalGraph::new();
     let mut variables: HashMap<String, noma_compiler::NodeId> = HashMap::new();
     let mut last_node: Option<noma_compiler::NodeId> = None;
+    let mut optimizer_state = OptimizerState::new();
 
-    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry)
+    lower_statements_shared(&mut graph, &mut variables, &func.body, &mut last_node, &func_registry, &mut optimizer_state)
         .map_err(|e| anyhow::anyhow!(e))?;
 
     // Perform forward pass (values are already computed after optimization)

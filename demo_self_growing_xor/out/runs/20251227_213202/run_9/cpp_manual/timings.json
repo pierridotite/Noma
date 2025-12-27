@@ -1,0 +1,18 @@
+{
+  "cold_start_ms": 0,
+  "compile_overhead_ms": 0,
+  "train_warmup_ms": 0.097268,
+  "train_steady_ms": 0.700045,
+  "steady_step_us_median": 1.348,
+  "steady_step_us_p95": 3.688,
+  "growth_event_ms": 0.001426,
+  "total_ms": 0.79743,
+  "iters_total": 320,
+  "time_to_threshold_ms": 0.797245,
+  "final_loss": 0.00197684,
+  "final_accuracy": 1,
+  "peak_rss_kb": 15744,
+  "precision": "f64",
+  "device": "cpu",
+  "impl": "cpp_manual"
+}

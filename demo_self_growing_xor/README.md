@@ -145,17 +145,17 @@ Run the benchmark to generate `comparison.png` and `summary.json`.
 
 | Implementation | Time (ms) | Speedup vs NumPy | Final Loss |
 |----------------|-----------|------------------|------------|
-| noma_compiled | 0.88 | **31.2x** | 0.001989 |
-| cpp_manual | 1.12 | 24.4x | 0.001977 |
-| numpy_manual | 27.41 | 1.0x | 0.001977 |
-| noma_interpreted | 108.12 | 0.3x | 0.001988 |
+| noma_compiled | 0.70 | **42.3x** | 0.001978 |
+| cpp_manual | 0.80 | 37.0x | 0.001977 |
+| numpy_manual | 29.71 | 1.0x | 0.001977 |
+| noma_interpreted | 96.44 | 0.3x | 0.001987 |
 
 ### Compile Times
 
 | Language | Compile Time (ms) |
 |----------|-------------------|
-| NOMA | 227 |
-| C++ | 1504 |
+| NOMA | 212 |
+| C++ | 1424 |
 
 ### Performance Comparison
 
@@ -218,7 +218,7 @@ MIT
 
 ## Key Findings
 
-1. **Performance**: NOMA compiled is **31x faster** than NumPy and **24x faster** than C++
-2. **Compile time**: NOMA compiles **6.6x faster** than C++ (227ms vs 1504ms)
+1. **Performance**: NOMA compiled is **42x faster** than NumPy and **37x faster** than C++
+2. **Compile time**: NOMA compiles **6.7x faster** than C++ (212ms vs 1424ms)
 3. **Correctness**: All implementations converge to the same final loss (~0.002)
 4. **Simplicity**: NOMA requires no manual gradient implementation

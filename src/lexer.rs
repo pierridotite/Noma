@@ -264,6 +264,7 @@ impl Lexer {
             "alloc" => TokenType::Alloc,
             "free" => TokenType::Free,
             "realloc" => TokenType::Realloc,
+            "reset_optimizer" => TokenType::ResetOptimizer,
             "load_csv" => TokenType::LoadCsv,
             "save_csv" => TokenType::SaveCsv,
             "load_safetensors" => TokenType::LoadSafetensors,

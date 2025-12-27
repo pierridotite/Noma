@@ -1,0 +1,6 @@
+{
+  "total_ms": 95.94927900070616,
+  "final_loss": 0.375555188702149,
+  "iters_total": 202,
+  "impl": "noma_interpreted"
+}

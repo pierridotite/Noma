@@ -1,0 +1,63 @@
+// XOR benchmark - RESET optimizer state after growth
+// This is the CONTROL: to prove that preserving state is beneficial,
+// we compare with a version that resets m/v/t after growth.
+//
+// Uses: reset_optimizer() builtin to clear Adam state
+
+fn main() {
+    // XOR dataset
+    let X = tensor [
+        [0.0, 0.0],
+        [0.0, 1.0],
+        [1.0, 0.0],
+        [1.0, 1.0]
+    ];
+    let Y = tensor [
+        [0.0],
+        [1.0],
+        [1.0],
+        [0.0]
+    ];
+
+    // Initial parameters (small model: hidden=2)
+    learn W1 = rand_normal_tensor(0.0, 0.5, 2.0, 2.0);
+    learn W2 = rand_normal_tensor(0.0, 0.5, 2.0, 1.0);
+
+    // Phase 1: exactly 200 iterations
+    let optimizer = 2.0;      // Adam
+    let learning_rate = 0.05;
+    let max_iterations = 200.0;
+
+    optimize(W1) until loss < 0.0 {  // Never true, forces full 200 iters
+        let hidden = sigmoid(matmul(X, W1));
+        let pred = sigmoid(matmul(hidden, W2));
+        let err = pred - Y;
+        let loss = mean(err * err);
+        print(loss);
+        minimize loss;
+    }
+
+    // Growth: widen the hidden layer
+    realloc W1 = [2.0, 16.0];
+    realloc W2 = [16.0, 1.0];
+    
+    // RESET optimizer state - this is the key difference!
+    // In a fair comparison, this should converge SLOWER than the preserve version
+    reset_optimizer();
+
+    // Phase 2: exactly 120 more iterations (total 320, matching NumPy/C++)
+    let optimizer = 2.0;      // Adam
+    let learning_rate = 0.12;
+    let max_iterations = 120.0;
+
+    optimize(W1) until loss < 0.0 {  // Never true, forces full 120 iters
+        let hidden = sigmoid(matmul(X, W1));
+        let pred = sigmoid(matmul(hidden, W2));
+        let err = pred - Y;
+        let loss = mean(err * err);
+        print(loss);
+        minimize loss;
+    }
+
+    return loss;
+}

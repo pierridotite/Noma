@@ -121,6 +121,9 @@ pub enum Statement {
         name: String,
         shape: Vec<Expression>,
     },
+    /// Reset optimizer state: reset_optimizer();
+    /// Clears Adam m/v/t state to restart optimization from scratch
+    ResetOptimizer,
     /// Load tensor from CSV file: let data = load_csv("path.csv");
     LoadCsv {
         name: String,

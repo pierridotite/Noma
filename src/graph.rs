@@ -854,6 +854,10 @@ impl ComputationalGraph {
                         last_node = Some(result);
                     }
                 }
+                Statement::ResetOptimizer => {
+                    // reset_optimizer is handled at runtime by main.rs, not in the graph
+                    // In function context, this is a no-op
+                }
             }
         }
 
@@ -869,13 +873,24 @@ impl ComputationalGraph {
     }
 
     /// Reallocate a learnable tensor in-place with a new shape (preserves data)
+    /// New slots are initialized with small random values to break symmetry
     pub fn realloc_learnable_tensor_by_id(&mut self, id: NodeId, new_shape: Vec<usize>) -> Result<NodeId, String> {
         let node = self.get_node_mut(id).ok_or_else(|| "Invalid node id for learnable realloc".to_string())?;
         match (&node.node_type, node.value.clone()) {
             (NodeType::Learnable(_), Some(Value::Tensor(t))) => {
                 let new_size: usize = new_shape.iter().product();
-                let mut new_data = vec![0.0; new_size];
-                let copy_len = t.data.len().min(new_size);
+                let old_size = t.data.len();
+                
+                // Initialize new slots with small random values to break symmetry
+                let mut rng = rand::thread_rng();
+                let init_std = 0.3;  // Small std for new weights
+                let normal = Normal::new(0.0, init_std).unwrap();
+                let mut new_data: Vec<f64> = (0..new_size)
+                    .map(|_| normal.sample(&mut rng))
+                    .collect();
+                
+                // Preserve existing data
+                let copy_len = old_size.min(new_size);
                 new_data[..copy_len].copy_from_slice(&t.data[..copy_len]);
 
                 let tensor = Tensor::new(new_data, new_shape.clone())?;
@@ -1889,8 +1904,39 @@ impl ComputationalGraph {
                 if let NodeType::Learnable(_) = &node.node_type {
                     if let (Some(value), Some(gradient)) = (node.value.clone(), node.gradient.clone()) {
                         // Get or initialize m and v for this parameter
-                        let m = state.m.entry(node_id).or_insert_with(|| gradient.zeros_like()).clone();
-                        let v = state.v.entry(node_id).or_insert_with(|| gradient.zeros_like()).clone();
+                        // Handle shape mismatch after realloc: extend m/v with zeros for new slots
+                        let m = {
+                            let existing = state.m.entry(node_id).or_insert_with(|| gradient.zeros_like());
+                            match (existing, &gradient) {
+                                (Value::Tensor(m_t), Value::Tensor(g_t)) if m_t.data.len() != g_t.data.len() => {
+                                    // Shape changed (realloc): copy old values, pad with zeros
+                                    let mut new_data = vec![0.0; g_t.data.len()];
+                                    for (i, &v) in m_t.data.iter().enumerate().take(new_data.len()) {
+                                        new_data[i] = v;
+                                    }
+                                    let resized = Value::Tensor(Tensor { data: new_data, shape: g_t.shape.clone() });
+                                    state.m.insert(node_id, resized.clone());
+                                    resized
+                                }
+                                _ => state.m.get(&node_id).cloned().unwrap_or_else(|| gradient.zeros_like())
+                            }
+                        };
+                        let v = {
+                            let existing = state.v.entry(node_id).or_insert_with(|| gradient.zeros_like());
+                            match (existing, &gradient) {
+                                (Value::Tensor(v_t), Value::Tensor(g_t)) if v_t.data.len() != g_t.data.len() => {
+                                    // Shape changed (realloc): copy old values, pad with zeros
+                                    let mut new_data = vec![0.0; g_t.data.len()];
+                                    for (i, &val) in v_t.data.iter().enumerate().take(new_data.len()) {
+                                        new_data[i] = val;
+                                    }
+                                    let resized = Value::Tensor(Tensor { data: new_data, shape: g_t.shape.clone() });
+                                    state.v.insert(node_id, resized.clone());
+                                    resized
+                                }
+                                _ => state.v.get(&node_id).cloned().unwrap_or_else(|| gradient.zeros_like())
+                            }
+                        };
 
                         let (updated, new_m, new_v) = match (value, gradient, m, v) {
                             (Value::Scalar(param), Value::Scalar(g), Value::Scalar(m_val), Value::Scalar(v_val)) => {

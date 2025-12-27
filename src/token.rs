@@ -21,6 +21,7 @@ pub enum TokenType {
     Alloc,       // alloc
     Free,        // free
     Realloc,     // realloc
+    ResetOptimizer, // reset_optimizer
     
     // File I/O
     LoadCsv,     // load_csv
@@ -113,6 +114,7 @@ impl fmt::Display for TokenType {
             TokenType::Alloc => write!(f, "alloc"),
             TokenType::Free => write!(f, "free"),
             TokenType::Realloc => write!(f, "realloc"),
+            TokenType::ResetOptimizer => write!(f, "reset_optimizer"),
             TokenType::LoadCsv => write!(f, "load_csv"),
             TokenType::SaveCsv => write!(f, "save_csv"),
             TokenType::LoadSafetensors => write!(f, "load_safetensors"),

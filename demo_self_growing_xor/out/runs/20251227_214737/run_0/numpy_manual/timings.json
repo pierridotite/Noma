@@ -1,0 +1,18 @@
+{
+  "cold_start_ms": 0.000455000190413557,
+  "compile_overhead_ms": 0,
+  "train_warmup_ms": 7.137836000765674,
+  "train_steady_ms": 17.336826998871402,
+  "steady_step_us_median": 55.85699909715913,
+  "steady_step_us_p95": 91.87420000671409,
+  "growth_event_ms": 0.07133700091799255,
+  "total_ms": 24.47758499874908,
+  "iters_total": 320,
+  "time_to_threshold_ms": 24.47702599965851,
+  "final_loss": 0.001976841788422055,
+  "final_accuracy": 1.0,
+  "peak_rss_kb": 30292,
+  "precision": "f64",
+  "device": "cpu",
+  "impl": "numpy_manual"
+}
