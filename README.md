@@ -14,6 +14,30 @@ A research-driven systems language for machine learning where **autodiff is a co
 **[Language Guide](LANGUAGE_GUIDE.md) · [Contributing](CONTRIBUTING.md) · [Discord](https://discord.gg/GCYvkJWsPf)**
 
 ---
+## Table of Contents
+
+- [News](#-news)
+- [What's NOMA ?](#whats-noma-)
+- [Where the idea came from (short origin story)](#where-the-idea-came-from-short-origin-story)
+- [Dynamic topology growth (what realloc is trying to mean)](#dynamic-topology-growth-what-realloc-is-trying-to-mean)
+- [XOR demo (first result, kept short)](#xor-demo-first-result-kept-short)
+- [Quick start](#quick-start)
+- [Project status (alpha)](#project-status-alpha)
+- [Scientific context (selected references)](#scientific-context-selected-references)
+  - [Topology changes while reusing learned information](#topology-changes-while-reusing-learned-information)
+  - [Biological inspiration: structural plasticity and stability](#biological-inspiration-structural-plasticity-and-stability)
+  - [Compiler-level / IR-level autodiff (adjacent area)](#compiler-level--ir-level-autodiff-adjacent-area)
+- [Contributing](#contributing)
+- [Citation](#citation)
+
+---
+
+## 🔥 News
+
+- [2025-12-25] Initial presentation of NOMA
+- [2025-12-30] [Self-growing XOR demo](demo_self_growing_xor/) (reproducible)
+  
+---
 
 ## What's NOMA ?
 
