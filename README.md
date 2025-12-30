@@ -154,8 +154,8 @@ See: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 If you want to cite NOMA in a scientific paper, please use the following reference; BibTeX snippet below :
 ```BibTeX
-@software{raffalli_noma_2025,
-  author  = {Raffalli, Pierre},
+@software{NOMA,
+  author  = {NOMA Authors},
   title   = {NOMA: Neural-Oriented Machine Architecture},
   year    = {2025},
   version = {alpha},
