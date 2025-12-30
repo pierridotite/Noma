@@ -11,7 +11,7 @@ A research-driven systems language for machine learning where **autodiff is a co
 [![Stars](https://img.shields.io/github/stars/pierridotite/Noma?style=flat&logo=github)](https://github.com/pierridotite/Noma/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-7289DA?logo=discord&logoColor=white)](https://discord.gg/GCYvkJWsPf)
 
-**[Quick Start](QUICKSTART.md) · [Language Guide](LANGUAGE_GUIDE.md) · [Contributing](CONTRIBUTING.md) · [Discord](https://discord.gg/GCYvkJWsPf)**
+**[Language Guide](LANGUAGE_GUIDE.md) · [Contributing](CONTRIBUTING.md) · [Discord](https://discord.gg/GCYvkJWsPf)**
 
 ---
 
