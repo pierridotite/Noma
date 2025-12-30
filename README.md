@@ -97,7 +97,7 @@ We include a small, fully reproducible self-growing XOR toy benchmark to sanity-
 
 In this demo, after the growth step, the configuration that preserves optimizer state across realloc reconverges faster than a baseline that resets state. This is an early, limited result on a toy task useful as a first signal, not a performance claim.
 
-Full scripts, plots, and notes are in `demo_self_growing_xor/`.
+Full scripts, plots, and notes are in [demo_self_growing_xor/](demo_self_growing_xor/).
 
 ---
 
