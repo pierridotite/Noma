@@ -506,4 +506,3 @@ Current limitations to be aware of:
 
 - See [README.md](README.md) for installation and quick start
 - Browse [examples/](examples/) for more code samples
-- Check the [architecture documentation](README.md#architecture) for compiler internals
