@@ -11,10 +11,8 @@ Thank you for your interest in contributing to NOMA! This document provides guid
 - [Development Setup](#development-setup)
 - [Project Structure](#project-structure)
 - [How to Contribute](#how-to-contribute)
-- [Coding Standards](#coding-standards)
 - [Testing](#testing)
 - [Pull Request Process](#pull-request-process)
-- [Areas for Contribution](#areas-for-contribution)
 
 ---
 
@@ -258,94 +256,6 @@ cargo run -- run examples/your_new_example.noma
    - Why is it needed?
    - How was it tested?
 
-### PR Checklist
-
-- [ ] Code compiles without warnings
-- [ ] All tests pass
-- [ ] New features have examples
-- [ ] Documentation updated (README.md, LANGUAGE_GUIDE.md)
-- [ ] Commit messages are clear
-
----
-
-## Areas for Contribution
-
-### High Priority
-
-#### 1. Error Messages
-**What**: Improve compiler error messages with helpful suggestions  
-**Difficulty**: Medium (2/5)  
-**Files**: `src/error.rs`, `src/parser.rs`, `src/graph.rs`
-
-Example:
-```
-Current: "Unexpected token: RBrace"
-Better:  "Unexpected '}'. Did you forget a semicolon on the previous line?"
-```
-
-#### 2. Standard Library Functions
-**What**: Add more built-in functions (softmax, dropout, batch_norm, etc.)  
-**Difficulty**: Medium (2/5)  
-**Files**: `src/graph.rs` (add to `eval_builtin_function`)
-
-Example:
-```rust
-"softmax" => {
-    // Implement: softmax(x) = exp(x) / sum(exp(x))
-    // ...
-}
-```
-
-#### 3. Optimizer Improvements
-**What**: Add more optimizers (AdaGrad, Lion, etc.)  
-**Difficulty**: Hard (3/5)  
-**Files**: `src/graph.rs`, `src/ast.rs`
-
-#### 4. GPU Support
-**What**: Improve PTX/CUDA backend for production use  
-**Difficulty**: Expert (4/5)  
-**Files**: `src/ptx_codegen.rs`, `src/nvptx_host.rs`
-
-### Medium Priority
-
-#### 5. Documentation Examples
-**What**: Add more example programs to `examples/`  
-**Difficulty**: Easy (1/5)  
-**Ideas**:
-- Convolutional operations
-- Recurrent networks
-- Reinforcement learning (Q-learning)
-- GAN training
-- Transfer learning
-
-#### 6. VS Code Extension
-**What**: Improve syntax highlighting, add snippets, error highlighting  
-**Difficulty**: Medium (2/5)  
-**Files**: `noma-vscode/`
-
-#### 7. Benchmarks
-**What**: Add comprehensive benchmarks vs PyTorch/TensorFlow  
-**Difficulty**: Medium (2/5)  
-**What to measure**:
-- Training time (various network sizes)
-- Inference latency
-- Memory usage
-- Binary size
-
-#### 8. Type System
-**What**: Add static shape checking at compile time  
-**Difficulty**: Expert (4/5)  
-**Files**: `src/parser.rs`, `src/ast.rs`, new `src/typecheck.rs`
-
-### Low Priority (Future Work)
-
-- Distributed training across multiple machines
-- Quantization (INT8, FP16)
-- Model compression
-- Automatic mixed precision
-- JIT compilation mode
-- WASM backend for web deployment
-
 ---
 
 ## Code Review Process
@@ -362,7 +272,7 @@ Reviews usually take 2-7 days. Feel free to ping maintainers if it's been longer
 ## Questions?
 
 - **GitHub Issues**: For bugs and feature requests
-- **GitHub Discussions**: For general questions
+- **GitHub Discussions**: For general questions, but discord is better for that.
 - **Email**: [praffalli1@gmail.com]
 
 ---
