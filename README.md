@@ -37,7 +37,7 @@ A research-driven systems language for machine learning where **autodiff is a co
 - [2025-12-25] Initial presentation of NOMA
 - [2025-12-30] [Self-growing XOR demo](demo_self_growing_xor/) (reproducible)
 
-*All informations on [changelog](changelog.md)*
+*All informations on [changelog](CHANGELOG.md)*
 
 ---
 
