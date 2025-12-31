@@ -34,8 +34,9 @@ A research-driven systems language for machine learning where **autodiff is a co
 
 ## 🔥 News 
 
-- [2025-12-25] Initial presentation of NOMA
+- [2025-12-31] [Jupyter notebook extension](notebook/) with `%%noma` cell magic for interactive development
 - [2025-12-30] [Self-growing XOR demo](demo_self_growing_xor/) (reproducible)
+- [2025-12-25] Initial presentation of NOMA
 
 *All informations on [changelog](CHANGELOG.md)*
 

@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Jupyter notebook extension with `%%noma` cell magic for executing NOMA code in notebooks
+- Automatic compilation caching based on SHA256 hash
+- Execution logging and artifact management for notebook workflows
+- Three example notebooks: getting started, neural networks, and advanced patterns
+
 ### Changed
 - Revised README with Table of Contents, News section, and improved clarity
 - Updated citation format in documentation
