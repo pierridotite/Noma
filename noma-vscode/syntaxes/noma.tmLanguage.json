@@ -49,15 +49,19 @@
       "patterns": [
         {
           "name": "keyword.control.noma",
-          "match": "\\b(if|else|while|for|return|until|optimize|minimize)\\b"
+          "match": "\\b(if|else|while|for|return|until|optimize|minimize|batch|in)\\b"
         },
         {
           "name": "keyword.declaration.noma",
           "match": "\\b(fn|let|learn|struct)\\b"
         },
         {
+          "name": "keyword.other.noma",
+          "match": "\\b(as|alloc|free|realloc|reset_optimizer|load_csv|save_csv|load_safetensors|save_safetensors)\\b"
+        },
+        {
           "name": "storage.type.noma",
-          "match": "\\b(tensor)\\b"
+          "match": "\\b(tensor|f64|f32|i32|i64)\\b"
         },
         {
           "name": "constant.language.boolean.noma",
@@ -80,7 +84,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.noma",
-          "match": "\\b(sigmoid|relu|sum|mean|dot|matmul|print|exp|log|sqrt|abs|sin|cos|tan)\\b"
+          "match": "\\b(sigmoid|relu|tanh|exp|log|sqrt|abs|sin|cos|tan|pow|min|max|floor|ceil|sum|mean|dot|matmul|print|rand|rand_uniform|rand_normal|rand_tensor|rand_normal_tensor|xavier_init|he_init)\\b"
         }
       ]
     },
@@ -108,11 +112,15 @@
         },
         {
           "name": "keyword.operator.arithmetic.noma",
-          "match": "(\\+|-|\\*|/|%|\\^)"
+          "match": "(\\*\\*|\\+|-|\\*|/|%|\\^)"
         },
         {
           "name": "keyword.operator.assignment.noma",
           "match": "="
+        },
+        {
+          "name": "keyword.operator.cast.noma",
+          "match": "\\bas\\b"
         }
       ]
     },

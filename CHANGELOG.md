@@ -13,11 +13,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Automatic compilation caching based on SHA256 hash
 - Execution logging and artifact management for notebook workflows
 - Three example notebooks: getting started, neural networks, and advanced patterns
+- String literal support for `print()` function in Jupyter notebooks
+- Type casting syntax with `as` operator (e.g., `x as f64`)
+- Example file demonstrating Jupyter features (30_jupyter_features.noma)
+- Enhanced VS Code extension (v0.1.0) with comprehensive syntax highlighting and 30+ snippets
 
 ### Changed
 - Revised README with Table of Contents, News section, and improved clarity
 - Updated citation format in documentation
 - Streamlined CONTRIBUTING.md
+- Improved error messages when code is at top-level (suggests wrapping in `fn main() { ... }`)
+- Enhanced Jupyter magic to handle empty cells and comment-only cells gracefully
+
+### Fixed
+- Fixed issue where empty cells in Jupyter notebooks caused errors
+- Fixed type casting syntax parsing and code generation
+- Improved error guidance for top-level statement rejection
 
 ### Removed
 - Removed QUICKSTART.md and related links

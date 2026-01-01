@@ -579,6 +579,17 @@ impl ComputationalGraph {
                 Ok(self.add_unary_op(op_str, expr_id))
             }
             Expression::Call { name, args } => {
+                // Special handling for print() with string literal support
+                if name == "print" && args.len() == 1 {
+                    // Check if the argument is a string literal
+                    if let Expression::StringLiteral(s) = &args[0] {
+                        // Print the string immediately without creating a node
+                        println!("{}", s);
+                        // Return a constant node for consistency
+                        return Ok(self.add_constant(0.0));
+                    }
+                }
+
                 // Check if this is a user-defined function
                 if let Some(user_fn) = functions.get(name) {
                     // Inline the user function
@@ -607,6 +618,15 @@ impl ComputationalGraph {
                         arg_ids.push(self.build_from_expression_with_functions(arg, variables, functions)?);
                     }
                     Ok(self.add_function_call(name.clone(), arg_ids))
+                }
+            }
+            Expression::Cast { expr, target_type } => {
+                // For now, casts are no-ops since we only have f64 scalars and tensors
+                // In the future, this could be used for type conversions
+                let expr_id = self.build_from_expression_with_functions(expr, variables, functions)?;
+                match target_type.as_str() {
+                    "f64" | "f32" | "i32" | "i64" => Ok(expr_id), // Accept common cast targets
+                    _ => Err(format!("Unknown cast target type: {}", target_type)),
                 }
             }
         }

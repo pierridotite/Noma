@@ -1,7 +1,7 @@
 {
   "name": "noma-lang",
   "displayName": "NOMA Language",
-  "description": "Syntax highlighting and language support for the NOMA programming language",
+  "description": "Syntax highlighting and language support for the NOMA programming language - ML-first with automatic differentiation",
   "version": "0.1.0",
   "publisher": "noma",
   "engines": {
@@ -15,7 +15,10 @@
     "machine learning",
     "autodiff",
     "automatic differentiation",
-    "ml"
+    "ml",
+    "deep learning",
+    "neural networks",
+    "optimization"
   ],
   "repository": {
     "type": "git",
@@ -63,6 +66,11 @@
         "command": "noma.build",
         "title": "NOMA: Build Current File",
         "icon": "$(gear)"
+      },
+      {
+        "command": "noma.info",
+        "title": "NOMA: Show Version Info",
+        "icon": "$(info)"
       }
     ],
     "menus": {

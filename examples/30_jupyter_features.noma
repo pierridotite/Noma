@@ -1,0 +1,91 @@
+// NOMA Test File - Demonstrates All Fixed Features
+// This file demonstrates the 5 fixes applied to address Jupyter limitations
+
+fn main() {
+    // ========================================
+    // 1. STRING PRINTING SUPPORT
+    // ========================================
+    print("=== Feature 1: String Printing ===");
+    print("This is now supported!");
+    print("No more numeric-only limitations");
+    
+    // ========================================
+    // 2. TYPE CASTING SYNTAX
+    // ========================================
+    print("=== Feature 2: Type Casting ===");
+    let x = 42 as f64;
+    let y = 3.14;
+    let z = y as f64;
+    print(x);
+    print(y);
+    print(z);
+    
+    // ========================================
+    // 3. IMPROVED ERROR MESSAGES
+    // ========================================
+    // If code is at top level, the error message now says:
+    // "Expected 'fn' or 'struct' at top level, but found [TOKEN].
+    //  All code must be inside a function. Try wrapping your code in: fn main() { ... }"
+    print("=== Feature 3: Better Error Messages ===");
+    print("Error messages now guide you to wrap code in fn main()");
+    
+    // ========================================
+    // 4. EMPTY CELL SUPPORT IN JUPYTER
+    // ========================================
+    print("=== Feature 4: Empty Cell Support ===");
+    print("Empty cells or comment-only cells no longer cause errors");
+    
+    // ========================================
+    // 5. LOOP OPTIMIZATION SUPPORT
+    // ========================================
+    print("=== Feature 5: Loop Optimization ===");
+    print("Large loops can now be optimized with --fast-math flag");
+    
+    // Demonstrate loop with optimization
+    let sum = 0.0;
+    let i = 0;
+    print("Starting loop computation...");
+    while (i < 1000) {
+        sum = sum + i;
+        i = i + 1;
+    }
+    print("Loop complete");
+    print(sum);
+    
+    // ========================================
+    // COMBINATION EXAMPLE
+    // ========================================
+    print("=== Combined Features Example ===");
+    print("Demonstrating multiple features together");
+    
+    let iterations = 100 as f64;
+    let result = 0.0;
+    let count = 0.0;
+    
+    print("Processing batches...");
+    while (count < iterations) {
+        result = result + count;
+        count = count + 1;
+    }
+    
+    print("Batch processing complete");
+    print(result);
+    
+    print("=== All Tests Complete ===");
+}
+
+// NOTE: All of the following are now valid:
+//
+// 1. Using string literals with print():
+//    print("message")
+//
+// 2. Using type casts:
+//    let x = 42 as f64;
+//    let y = (3.14) as f64;
+//
+// 3. Getting helpful error messages when forgetting fn main()
+//
+// 4. Empty or comment-only Jupyter cells work without errors
+//
+// 5. Using --fast-math for loop optimization:
+//    noma fast-run --fast-math this_file.noma

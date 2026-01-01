@@ -35,6 +35,11 @@ pub enum Expression {
         target: Box<Expression>,
         indices: Vec<Expression>,
     },
+    /// Type cast (e.g., x as f64)
+    Cast {
+        expr: Box<Expression>,
+        target_type: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,6 +227,9 @@ impl fmt::Display for Expression {
             Expression::Index { target, indices } => {
                 let idx_str = indices.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
                 write!(f, "{}[{}]", target, idx_str)
+            }
+            Expression::Cast { expr, target_type } => {
+                write!(f, "({} as {})", expr, target_type)
             }
         }
     }

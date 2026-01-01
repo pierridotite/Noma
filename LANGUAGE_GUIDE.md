@@ -4,6 +4,8 @@ Complete reference for the NOMA programming language.
 
 ## Table of Contents
 - [Variables](#variables)
+- [Data Types](#data-types)
+- [Type Casting](#type-casting)
 - [Optimization Loop](#optimization-loop)
 - [Hyperparameters](#hyperparameters)
 - [Optimizers](#optimizers)
@@ -15,6 +17,7 @@ Complete reference for the NOMA programming language.
 - [File I/O](#file-io)
 - [Batch Processing](#batch-processing)
 - [Control Flow](#control-flow)
+- [Operators](#operators)
 
 ---
 
@@ -26,6 +29,64 @@ learn w = 0.1;      // Learnable parameter (tracked for gradients)
 ```
 
 The `learn` keyword marks a variable as learnable, automatically including it in gradient computations during optimization.
+
+---
+
+## Data Types
+
+NOMA supports three primary data types:
+
+### Scalars (f64)
+```noma
+let x = 3.14;           // Floating-point number (64-bit)
+let y = 42;             // Also stored as f64
+let negative = -5.0;    // Negative values supported
+```
+
+### Strings
+```noma
+print("Hello, NOMA!");                    // Direct string printing
+print("Training loss: ");                 // Status messages
+let message = "Starting optimization";    // String variables (limited support)
+
+// Escape sequences
+print("Line 1\nLine 2");                  // Newline
+print("Tab\tseparated");                  // Tab
+print("Quote: \"text\"");                  // Escaped quotes
+```
+
+**Note:** Strings are primarily for I/O operations (`print`, file paths). String manipulation functions are not yet available.
+
+### Tensors
+```noma
+let v = tensor [1.0, 2.0, 3.0];              // 1D vector
+let m = tensor [[1.0, 2.0], [3.0, 4.0]];     // 2D matrix
+let t = tensor [[[1.0]]];                     // 3D+ tensors supported
+```
+
+---
+
+## Type Casting
+
+Explicit type conversions using the `as` operator:
+
+```noma
+// Scalar casting (mostly for clarity, all numbers are f64)
+let x = 42 as f64;
+let y = (3.14 + 1.0) as f64;
+
+// Cast in expressions
+let result = (x * 2) as f64;
+let ratio = (10 / 3) as f64;
+```
+
+**Supported cast targets:**
+- `f64` (default floating-point)
+- `f32` (currently treated as f64)
+- `i32` (currently treated as f64)
+- `i64` (currently treated as f64)
+
+**Note:** Casts are currently no-ops since NOMA only has f64 internally, but the syntax is supported for future type system expansion.
 
 ---
 
@@ -188,34 +249,56 @@ fn main() {
 
 ### Activation Functions
 ```noma
-sigmoid(x)    // 1 / (1 + e^(-x))
-relu(x)       // max(0, x)
-tanh(x)       // hyperbolic tangent
+sigmoid(x)    // 1 / (1 + e^(-x)) - Smooth S-curve [0, 1]
+relu(x)       // max(0, x) - Rectified Linear Unit
+tanh(x)       // Hyperbolic tangent [-1, 1]
 ```
+
+All activation functions support automatic differentiation.
 
 ### Math Functions
 ```noma
-sin(x)        // sine
-cos(x)        // cosine
-exp(x)        // e^x
-log(x)        // natural logarithm
-sqrt(x)       // square root
-abs(x)        // absolute value
-floor(x)      // floor (no autodiff)
-ceil(x)       // ceil (no autodiff)
+// Exponential and logarithmic
+exp(x)        // e^x - Natural exponential
+log(x)        // ln(x) - Natural logarithm (base e)
+pow(x, y)     // x^y - Power function
+sqrt(x)       // √x - Square root (equivalent to pow(x, 0.5))
+
+// Trigonometric
+sin(x)        // Sine (x in radians)
+cos(x)        // Cosine (x in radians)
+tan(x)        // Tangent (x in radians)
+
+// Utility
+abs(x)        // |x| - Absolute value
+min(a, b)     // Minimum of two values
+max(a, b)     // Maximum of two values
+floor(x)      // ⌊x⌋ - Floor (⚠️ no autodiff)
+ceil(x)       // ⌈x⌉ - Ceiling (⚠️ no autodiff)
 ```
+
+**Autodiff support:** All functions support automatic differentiation except `floor` and `ceil`.
 
 ### Tensor Operations
 ```noma
-sum(tensor)   // Sum all elements → scalar
-mean(tensor)  // Average of all elements → scalar
-dot(a, b)     // Dot product (1D) → scalar
-matmul(A, B)  // Matrix multiplication → tensor
+// Reductions (tensor → scalar)
+sum(tensor)   // Sum all elements
+mean(tensor)  // Average of all elements
+
+// Linear algebra
+dot(a, b)     // Dot product (1D vectors) → scalar
+matmul(A, B)  // Matrix multiplication (2D) → tensor
+              // (m×k) @ (k×n) → (m×n)
 ```
 
-### Utilities
+### I/O and Debugging
 ```noma
-print(x)      // Print value (returns input for chaining)
+print(value)      // Print numeric value or string
+                  // Examples:
+                  // print(42)           → "42"
+                  // print(3.14159)      → "3.14159"
+                  // print("Hello!")     → "Hello!"
+                  // Returns input for chaining: print(print(x) + 1)
 ```
 
 ---
@@ -429,6 +512,17 @@ if condition {
 } else {
     // else branch
 }
+
+// Nested conditions
+if x > 0 {
+    if x > 10 {
+        print("Large positive");
+    } else {
+        print("Small positive");
+    }
+} else {
+    print("Non-positive");
+}
 ```
 
 ### While Loop
@@ -436,12 +530,86 @@ if condition {
 while condition {
     // loop body
 }
+
+// Example: Simple counter
+let i = 0;
+let sum = 0;
+while i < 10 {
+    sum = sum + i;
+    i = i + 1;
+}
+print(sum);  // 45
 ```
 
 **Important:** Control flow is evaluated at compile-time during graph lowering. This means:
 - Non-taken branches are not compiled
-- While loops unroll the graph (use small iteration counts)
+- While loops unroll the graph (use small iteration counts for compile-time efficiency)
 - Dynamic runtime branching is not yet supported
+- Recommend using `batch` loops for data iteration instead of `while` loops
+
+---
+
+## Operators
+
+### Arithmetic Operators
+```noma
+let a = 5 + 3;      // Addition (8)
+let b = 5 - 3;      // Subtraction (2)
+let c = 5 * 3;      // Multiplication (15)
+let d = 5 / 3;      // Division (1.666...)
+let e = 5 % 3;      // Modulo (2)
+let f = 5 ^ 3;      // Power (125)
+let g = 5 ** 3;     // Power alternative syntax (125)
+let h = pow(5, 3);  // Power function call (125)
+```
+
+**Precedence** (highest to lowest):
+1. `**`, `^` - Power (right-associative)
+2. `-` (unary) - Negation
+3. `*`, `/`, `%` - Multiplication, division, modulo
+4. `+`, `-` - Addition, subtraction
+
+### Comparison Operators
+```noma
+x == y      // Equal to (returns 1.0 if true, 0.0 if false)
+x != y      // Not equal to
+x < y       // Less than
+x > y       // Greater than
+x <= y      // Less than or equal
+x >= y      // Greater than or equal
+```
+
+**Note:** Comparisons return `0.0` (false) or `1.0` (true), not boolean types.
+
+### Logical Operators
+```noma
+a && b      // Logical AND
+a || b      // Logical OR
+!a          // Logical NOT
+```
+
+**Truthiness:** `0.0` is false, any non-zero value is true.
+
+### Assignment
+```noma
+x = value;  // Assignment (x must be already declared)
+```
+
+### Operator Examples
+```noma
+// Combining operators
+let result = (2 + 3) * 4;        // 20
+let power = 2 ** 3 ** 2;         // 512 (right-associative: 2^(3^2))
+let complex = (a + b) / (c - d);
+
+// Comparison in conditions
+if x > 0 && y > 0 {
+    print("Both positive");
+}
+
+// Logical operations
+let is_valid = (x > 0) && (x < 100);
+```
 
 ---
 
@@ -492,13 +660,16 @@ fn main() {
 
 Current limitations to be aware of:
 
-- **Single data type**: Only `f64` supported (no integers, strings, or booleans as first-class types)
+- **Primary data type**: Only `f64` for computation (integers cast to floats)
+- **String support**: Limited to `print()` and file paths; no string manipulation
 - **No recursion**: User functions are inlined; recursive calls cause infinite compilation
-- **Control flow**: Evaluated at compile-time; while loops unroll the graph
+- **Control flow**: Evaluated at compile-time; while loops unroll the graph (can cause slow compilation)
 - **No autodiff through**: `floor`, `ceil`, or external C calls
 - **No module system**: Single-file programs only
 - **No debugging support**: No breakpoints or source maps yet
 - **Comparison operators**: Return `0.0`/`1.0` instead of true booleans
+- **Type casting**: `as` operator supported but currently no-op (all types are f64)
+- **Large loops**: While loops with many iterations can slow compilation; prefer `batch` loops
 
 ---
 

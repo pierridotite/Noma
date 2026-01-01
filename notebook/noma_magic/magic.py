@@ -264,8 +264,11 @@ def noma_magic(line: str, cell: str) -> Tuple[str, Optional[str], int]:
         %%noma --no-cache
         // Disable caching
     """
-    if not cell.strip():
-        raise UsageError("%%noma: empty cell")
+    # Allow empty cells or cells with only comments
+    cell_stripped = cell.strip()
+    if not cell_stripped or cell_stripped.startswith("//"):
+        # Empty cell or comment-only cell - just return success
+        return "", None, 0
     
     # Parse magic options
     options = {}

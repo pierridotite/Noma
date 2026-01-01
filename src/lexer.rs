@@ -271,6 +271,7 @@ impl Lexer {
             "save_safetensors" => TokenType::SaveSafetensors,
             "batch" => TokenType::Batch,
             "in" => TokenType::In,
+            "as" => TokenType::As,
             _ => TokenType::Identifier(word),
         }
     }

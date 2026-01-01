@@ -61,6 +61,7 @@ pub enum TokenType {
     Or,          // ||
     Not,         // !
     Dot,         // .
+    As,          // as (for type casting)
     
     // Delimiters
     LParen,      // (

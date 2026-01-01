@@ -134,5 +134,193 @@
     "prefix": "dot",
     "body": "let ${1:d} = dot(${2:a}, ${3:b});",
     "description": "Dot product of two vectors"
+  },
+  "Type Cast": {
+    "prefix": "as",
+    "body": "${1:value} as ${2:f64}",
+    "description": "Cast value to a type"
+  },
+  "Print String": {
+    "prefix": "prints",
+    "body": "print(\"${1:message}\");",
+    "description": "Print a string message"
+  },
+  "Alloc Tensor": {
+    "prefix": "alloc",
+    "body": [
+      "alloc ${1:buffer} = [${2:rows}, ${3:cols}];",
+      "$0"
+    ],
+    "description": "Allocate a heap tensor"
+  },
+  "Free Tensor": {
+    "prefix": "free",
+    "body": "free ${1:tensor};",
+    "description": "Free a heap-allocated tensor"
+  },
+  "Realloc Tensor": {
+    "prefix": "realloc",
+    "body": "realloc ${1:tensor} = [${2:new_rows}, ${3:new_cols}];",
+    "description": "Reallocate a tensor with new shape"
+  },
+  "Load CSV": {
+    "prefix": "loadcsv",
+    "body": [
+      "load_csv ${1:data} = \"${2:input.csv}\";",
+      "$0"
+    ],
+    "description": "Load data from CSV file"
+  },
+  "Save CSV": {
+    "prefix": "savecsv",
+    "body": "save_csv ${1:data}, \"${2:output.csv}\";",
+    "description": "Save data to CSV file"
+  },
+  "Load Safetensors": {
+    "prefix": "loadsafe",
+    "body": [
+      "load_safetensors ${1:model} = \"${2:model.safetensors}\";",
+      "$0"
+    ],
+    "description": "Load tensors from Safetensors file"
+  },
+  "Save Safetensors": {
+    "prefix": "savesafe",
+    "body": [
+      "save_safetensors {",
+      "    ${1:weights}: ${2:W},",
+      "    ${3:bias}: ${4:b}",
+      "}, \"${5:model.safetensors}\";",
+      "$0"
+    ],
+    "description": "Save tensors to Safetensors file"
+  },
+  "Batch Loop": {
+    "prefix": "batch",
+    "body": [
+      "batch ${1:item} in ${2:data} with ${3:batch_size} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Process data in batches"
+  },
+  "Batch Loop with Index": {
+    "prefix": "batchi",
+    "body": [
+      "batch ${1:item}, ${2:idx} in ${3:data} with ${4:batch_size} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Process data in batches with index"
+  },
+  "While Loop": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Create a while loop"
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Create an if statement"
+  },
+  "If-Else Statement": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition} {",
+      "    ${2:// then branch}",
+      "} else {",
+      "    ${3:// else branch}",
+      "}"
+    ],
+    "description": "Create an if-else statement"
+  },
+  "Adam Optimizer": {
+    "prefix": "adam",
+    "body": [
+      "let optimizer = 2.0;         // Adam",
+      "let learning_rate = ${1:0.001};",
+      "let beta1 = ${2:0.9};",
+      "let beta2 = ${3:0.999};",
+      "let epsilon = ${4:0.00000001};",
+      "$0"
+    ],
+    "description": "Configure Adam optimizer"
+  },
+  "RMSprop Optimizer": {
+    "prefix": "rmsprop",
+    "body": [
+      "let optimizer = 3.0;         // RMSprop",
+      "let learning_rate = ${1:0.001};",
+      "let beta2 = ${2:0.9};",
+      "let epsilon = ${3:0.00000001};",
+      "$0"
+    ],
+    "description": "Configure RMSprop optimizer"
+  },
+  "Reset Optimizer": {
+    "prefix": "resetopt",
+    "body": "reset_optimizer();",
+    "description": "Reset optimizer state"
+  },
+  "Random Initialization": {
+    "prefix": "randinit",
+    "body": [
+      "// He initialization for ReLU networks",
+      "let ${1:W} = he_init(${2:fan_in}, ${3:dim1}, ${4:dim2});",
+      "let ${5:b} = rand_tensor(${4:dim2});",
+      "$0"
+    ],
+    "description": "Initialize weights with He/Kaiming initialization"
+  },
+  "Xavier Initialization": {
+    "prefix": "xavierinit",
+    "body": [
+      "// Xavier initialization for sigmoid/tanh networks",
+      "let ${1:W} = xavier_init(${2:fan_in}, ${3:fan_out}, ${4:dim1}, ${5:dim2});",
+      "let ${6:b} = rand_tensor(${5:dim2});",
+      "$0"
+    ],
+    "description": "Initialize weights with Xavier/Glorot initialization"
+  },
+  "Tanh": {
+    "prefix": "tanh",
+    "body": "let ${1:a} = tanh(${2:x});",
+    "description": "Apply tanh activation"
+  },
+  "Power": {
+    "prefix": "pow",
+    "body": "let ${1:result} = pow(${2:base}, ${3:exponent});",
+    "description": "Compute power x^y"
+  },
+  "Min": {
+    "prefix": "min",
+    "body": "let ${1:result} = min(${2:a}, ${3:b});",
+    "description": "Minimum of two values"
+  },
+  "Max": {
+    "prefix": "max",
+    "body": "let ${1:result} = max(${2:a}, ${3:b});",
+    "description": "Maximum of two values"
+  },
+  "Neural Network Layer": {
+    "prefix": "nnlayer",
+    "body": [
+      "// Layer: ${1:input_size} -> ${2:output_size}",
+      "learn ${3:W} = he_init(${1:input_size}, ${1:input_size}, ${2:output_size});",
+      "learn ${4:b} = rand_tensor(${2:output_size});",
+      "",
+      "let ${5:z} = matmul(${6:X}, ${3:W}) + ${4:b};",
+      "let ${7:a} = relu(${5:z});",
+      "$0"
+    ],
+    "description": "Create a neural network layer with initialization"
   }
 }

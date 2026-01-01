@@ -108,11 +108,23 @@ impl Parser {
         match self.peek().token_type {
             TokenType::Fn => self.parse_function(),
             TokenType::Struct => self.parse_struct(),
-            _ => Err(NomaError::ParseError {
-                message: "Expected 'fn' or 'struct'".to_string(),
-                line: self.peek().line,
-                column: self.peek().column,
-            }),
+            _ => {
+                // Provide a helpful error message suggesting wrapping in fn main()
+                let msg = if !matches!(self.peek().token_type, TokenType::Eof) {
+                    format!(
+                        "Expected 'fn' or 'struct' at top level, but found {:?}. \
+                         All code must be inside a function. Try wrapping your code in: fn main() {{ ... }}",
+                        self.peek().token_type
+                    )
+                } else {
+                    "Expected 'fn' or 'struct'".to_string()
+                };
+                Err(NomaError::ParseError {
+                    message: msg,
+                    line: self.peek().line,
+                    column: self.peek().column,
+                })
+            }
         }
     }
 
@@ -667,6 +679,15 @@ impl Parser {
                             Expression::Index { target, indices }
                         }
                         other => Expression::Index { target: Box::new(other), indices: vec![index_expr] },
+                    };
+                }
+                TokenType::As => {
+                    // Type cast: expr as type_name
+                    self.advance(); // consume 'as'
+                    let target_type = self.parse_identifier("Expected type name after 'as'")?;
+                    expr = Expression::Cast {
+                        expr: Box::new(expr),
+                        target_type,
                     };
                 }
                 _ => break,
